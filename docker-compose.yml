@@ -1,0 +1,32 @@
+services:
+  docker-dashboard:
+    build: .
+    container_name: docker-dashboard
+    restart: unless-stopped
+    ports:
+      - "3333:3000"
+    volumes:
+      # Mount Docker socket for container access (read-only)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - DOCKER_SOCKET=/var/run/docker.sock
+    # For proper Docker socket access, either:
+    # 1. Run as root (less secure)
+    # 2. Add user to docker group on host
+    # 3. Set socket permissions
+    user: root
+    labels:
+      # Traefik labels (adjust domain as needed)
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`dashboard.local`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+      # Cloudflare tunnel label (set your tunnel URL)
+      - "cloudflare.tunnel.url=https://dashboard.yourdomain.com"
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
