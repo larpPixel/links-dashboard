@@ -1,0 +1,18 @@
+[Unit]
+Description=Links Dashboard
+After=network.target
+
+[Service]
+User=pico
+Group=pico
+WorkingDirectory=/home/pico/links-dashboard
+Environment=NODE_ENV=production
+Environment=PORT=3000
+# Ensure bun is in the path or use absolute path
+ExecStart=/home/pico/.bun/bin/bun run start
+Restart=always
+# Restart service after 10 seconds if it crashes
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
