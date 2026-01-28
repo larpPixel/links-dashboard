@@ -29,8 +29,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Install curl for Docker socket communication
-RUN apk add --no-cache curl
+# Install curl and docker-cli for container management
+RUN apk add --no-cache curl docker-cli
 
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs

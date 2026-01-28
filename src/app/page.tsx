@@ -8,22 +8,30 @@ interface ContainerInfo {
   image: string;
   state: "running" | "paused" | "exited" | "created" | "dead";
   status: string;
-  traefikUrl: string | null;
-  cloudflareUrl: string | null;
+  url: string | null;
   ports: string[];
-  group: string | null;
+  category: string | null;
+  subgroup: string | null;
 }
 
-interface ContainerGroup {
+interface Subgroup {
   name: string;
   containers: ContainerInfo[];
+  runningCount: number;
+  totalCount: number;
+  url: string | null;
+}
+
+interface Category {
+  name: string;
+  subgroups: Subgroup[];
   runningCount: number;
   totalCount: number;
 }
 
 interface ApiResponse {
-  groups?: ContainerGroup[];
-  standalone?: ContainerInfo[];
+  categories?: Category[];
+  uncategorized?: ContainerInfo[];
   total?: number;
   running?: number;
   error?: string;
@@ -40,103 +48,111 @@ function StatusDot({ state }: { state: ContainerInfo["state"] }) {
   };
 
   return (
-    <span
-      className={`inline-block w-1.5 h-1.5 rounded-full ${colors[state]} ${state === "running" ? "pulse" : ""}`}
+    <div
+      className={`w-1.5 h-1.5 rounded-full shrink-0 translate-y-[0.5px] ${colors[state]}`}
     />
   );
 }
 
+function getUrlLabel(url: string): string {
+  try {
+    const hostname = new URL(url).hostname;
+    const parts = hostname.split(".");
+    return parts[0] || "open";
+  } catch {
+    return "open";
+  }
+}
+
 function ContainerRow({ container }: { container: ContainerInfo }) {
-  const displayName = container.group
-    ? container.name.replace(`${container.group}_`, "").replace(`${container.group}-`, "")
+  const displayName = container.subgroup
+    ? container.name.replace(`${container.subgroup}_`, "").replace(`${container.subgroup}-`, "")
     : container.name;
 
   return (
-    <div className="flex items-center justify-between gap-4 py-2 text-sm">
-      <div className="flex items-center gap-2 min-w-0">
+    <div className="flex items-center justify-between gap-2 py-1 text-xs">
+      <div className="flex items-center gap-1.5 min-w-0">
         <StatusDot state={container.state} />
-        <span className="truncate">{displayName}</span>
+        <span className="truncate text-[var(--muted)]">{displayName}</span>
       </div>
-
-      <div className="flex items-center gap-3 text-xs shrink-0 text-[var(--muted)]">
-        {container.traefikUrl && (
-          <a
-            href={container.traefikUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-[var(--fg)] transition-colors"
-          >
-            local
-          </a>
-        )}
-        {container.cloudflareUrl && (
-          <a
-            href={container.cloudflareUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-[var(--fg)] transition-colors"
-          >
-            tunnel
-          </a>
-        )}
-      </div>
+      {container.url && (
+        <a
+          href={container.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-[var(--muted)] hover:text-[var(--fg)] transition-colors shrink-0"
+        >
+          {getUrlLabel(container.url)}
+        </a>
+      )}
     </div>
   );
 }
 
-function GroupSection({ group }: { group: ContainerGroup }) {
+function SubgroupItem({ subgroup }: { subgroup: Subgroup }) {
   const [open, setOpen] = useState(false);
+  const hasMultiple = subgroup.containers.length > 1;
+  const allRunning = subgroup.runningCount === subgroup.totalCount;
+  const mainState = allRunning ? "running" : subgroup.runningCount > 0 ? "paused" : "exited";
 
-  // Find the main container (one with traefik/cloudflare URL)
-  const mainContainer = group.containers.find((c) => c.traefikUrl || c.cloudflareUrl);
+  // Single container - show directly
+  if (!hasMultiple) {
+    const container = subgroup.containers[0];
+    return (
+      <div className="flex items-center justify-between gap-2 py-1.5 text-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          <StatusDot state={container.state} />
+          <span className="truncate">{subgroup.name}</span>
+        </div>
+        {subgroup.url && (
+          <a
+            href={subgroup.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-[var(--muted)] hover:text-[var(--fg)] transition-colors shrink-0"
+          >
+            {getUrlLabel(subgroup.url)}
+          </a>
+        )}
+      </div>
+    );
+  }
 
+  // Multiple containers - expandable
   return (
-    <div className="border-b border-[var(--border)]">
+    <div>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-4 py-3 text-left hover:opacity-70 transition-opacity"
+        className="w-full flex items-center justify-between gap-2 py-1.5 text-sm text-left hover:opacity-70 transition-opacity"
       >
-        <div className="flex items-center gap-2">
-          <span
-            className={`text-xs transition-transform ${open ? "rotate-90" : ""}`}
-          >
+        <div className="flex items-center gap-2 min-w-0">
+          <StatusDot state={mainState as ContainerInfo["state"]} />
+          <span className="truncate">{subgroup.name}</span>
+          <span className="text-xs text-[var(--muted)]">
+            {subgroup.runningCount}/{subgroup.totalCount}
+          </span>
+          <span className={`text-xs transition-transform ${open ? "rotate-90" : ""}`}>
             ›
           </span>
-          <span className="font-medium">{group.name}</span>
-          <span className="text-xs text-[var(--muted)]">
-            {group.runningCount}/{group.totalCount}
-          </span>
         </div>
-
-        <div className="flex items-center gap-3 text-xs text-[var(--muted)]">
-          {mainContainer?.traefikUrl && (
+        <div className="flex items-center shrink-0">
+          {subgroup.url && (
             <a
-              href={mainContainer.traefikUrl}
+              href={subgroup.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="hover:text-[var(--fg)] transition-colors"
+              className="text-xs text-[var(--muted)] hover:text-[var(--fg)] transition-colors"
               onClick={(e) => e.stopPropagation()}
             >
-              local
-            </a>
-          )}
-          {mainContainer?.cloudflareUrl && (
-            <a
-              href={mainContainer.cloudflareUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-[var(--fg)] transition-colors"
-              onClick={(e) => e.stopPropagation()}
-            >
-              tunnel
+              {getUrlLabel(subgroup.url)}
             </a>
           )}
         </div>
       </button>
 
       {open && (
-        <div className="pl-5 pb-3 border-l border-[var(--border)] ml-1.5">
-          {group.containers.map((container) => (
+        <div className="pl-4 pb-1 border-l border-[var(--border)] ml-0.5">
+          {subgroup.containers.map((container) => (
             <ContainerRow key={container.id} container={container} />
           ))}
         </div>
@@ -145,44 +161,65 @@ function GroupSection({ group }: { group: ContainerGroup }) {
   );
 }
 
-function StandaloneRow({ container }: { container: ContainerInfo }) {
+function CategoryColumn({ category }: { category: Category }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3 border-b border-[var(--border)]">
-      <div className="flex items-center gap-2 min-w-0">
-        <StatusDot state={container.state} />
-        <span className="font-medium truncate">{container.name}</span>
+    <div className="flex-1 min-w-0">
+      <div className="mb-3 pb-2 border-b border-[var(--border)]">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+          {category.name}
+        </h2>
+        <span className="text-xs text-[var(--muted)]">
+          {category.runningCount}/{category.totalCount}
+        </span>
       </div>
-
-      <div className="flex items-center gap-3 text-xs shrink-0 text-[var(--muted)]">
-        {container.traefikUrl && (
-          <a
-            href={container.traefikUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-[var(--fg)] transition-colors"
-          >
-            local
-          </a>
-        )}
-        {container.cloudflareUrl && (
-          <a
-            href={container.cloudflareUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-[var(--fg)] transition-colors"
-          >
-            tunnel
-          </a>
-        )}
-        {!container.traefikUrl && !container.cloudflareUrl && "—"}
+      <div className="space-y-0.5">
+        {category.subgroups.map((subgroup) => (
+          <SubgroupItem key={subgroup.name} subgroup={subgroup} />
+        ))}
       </div>
     </div>
   );
 }
 
+function UncategorizedSection({ containers }: { containers: ContainerInfo[] }) {
+  if (containers.length === 0) return null;
+
+  return (
+    <div className="mt-8 pt-6 border-t border-[var(--border)]">
+      <div className="text-xs text-[var(--muted)] mb-3 uppercase tracking-wide">
+        Other
+      </div>
+      <div className="space-y-1">
+        {containers.map((container) => (
+          <div key={container.id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+            <div className="flex items-center gap-2 min-w-0">
+              <StatusDot state={container.state} />
+              <span className="truncate">{container.name}</span>
+            </div>
+            {container.url ? (
+              <a
+                href={container.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-[var(--muted)] hover:text-[var(--fg)] transition-colors shrink-0"
+              >
+                {getUrlLabel(container.url)}
+              </a>
+            ) : (
+              <span className="text-xs text-[var(--muted)]">—</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+import Link from "next/link";
+
 export default function Home() {
-  const [groups, setGroups] = useState<ContainerGroup[]>([]);
-  const [standalone, setStandalone] = useState<ContainerInfo[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [uncategorized, setUncategorized] = useState<ContainerInfo[]>([]);
   const [total, setTotal] = useState(0);
   const [running, setRunning] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -197,8 +234,8 @@ export default function Home() {
         throw new Error(data.message || data.error);
       }
 
-      setGroups(data.groups || []);
-      setStandalone(data.standalone || []);
+      setCategories(data.categories || []);
+      setUncategorized(data.uncategorized || []);
       setTotal(data.total || 0);
       setRunning(data.running || 0);
       setError(null);
@@ -216,9 +253,15 @@ export default function Home() {
   }, [fetchContainers]);
 
   return (
-    <main className="min-h-screen px-6 py-12 max-w-xl mx-auto">
+    <main className="min-h-screen px-6 py-12 max-w-6xl mx-auto">
       <header className="mb-8 fade-in">
-        <h1 className="text-xl font-medium tracking-tight mb-0.5">Containers</h1>
+        <div className="flex items-baseline gap-2 mb-0.5">
+          <h1 className="text-xl font-medium tracking-tight text-[var(--foreground)]">Overview</h1>
+          <span className="text-xl text-[var(--muted)] font-light">|</span>
+          <Link href="/top" className="text-xl font-medium tracking-tight text-[var(--muted)] hover:text-[var(--foreground)] transition-colors">
+            Top
+          </Link>
+        </div>
         <p className="text-[var(--muted)] text-sm">
           {loading ? "Loading..." : `${running} of ${total} running`}
         </p>
@@ -242,35 +285,14 @@ export default function Home() {
         <p className="text-[var(--muted)] text-sm py-6 fade-in">No containers.</p>
       ) : (
         <div className="fade-in">
-          {/* Groups */}
-          {groups.length > 0 && (
-            <div className="mb-6">
-              <div className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">
-                Stacks
-              </div>
-              <div className="border-t border-[var(--border)]">
-                {groups.map((group) => (
-                  <GroupSection key={group.name} group={group} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Standalone */}
-          {standalone.length > 0 && (
-            <div>
-              {groups.length > 0 && (
-                <div className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">
-                  Services
-                </div>
-              )}
-              <div className="border-t border-[var(--border)]">
-                {standalone.map((container) => (
-                  <StandaloneRow key={container.id} container={container} />
-                ))}
-              </div>
-            </div>
-          )}
+          {/* 3-column layout for categories */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {categories.map((category) => (
+              <CategoryColumn key={category.name} category={category} />
+            ))}
+          </div>
+          
+          <UncategorizedSection containers={uncategorized} />
         </div>
       )}
     </main>

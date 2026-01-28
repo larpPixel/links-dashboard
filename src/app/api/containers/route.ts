@@ -1,18 +1,43 @@
 import { NextResponse } from "next/server";
+import { readFile } from "fs/promises";
+import { parse as parseYaml } from "yaml";
 
-interface DockerContainer {
-  Id: string;
-  Names: string[];
-  Image: string;
-  State: string;
-  Status: string;
-  Labels: Record<string, string>;
-  Ports: Array<{
-    PrivatePort: number;
-    PublicPort?: number;
-    Type: string;
-  }>;
-}
+const TRAEFIK_CONFIG_PATH = process.env.TRAEFIK_CONFIG_PATH || "/home/pico/server/infra/traefik/config/dynamic/services.yaml";
+
+// Mapping: container pattern -> [category, subgroup]
+// Subgroup is used to group related containers (e.g., gitea + gitea-runner)
+const SERVICE_MAPPING: Record<string, [string, string]> = {
+  // infra/
+  "traefik": ["infra", "traefik"],
+  "cloudflared": ["infra", "cloudflared"],
+  "postgres": ["infra", "databases"],
+  "mariadb": ["infra", "databases"],
+  "mysql": ["infra", "databases"],
+  "redis": ["infra", "databases"],
+  
+  // devops/
+  "gitea": ["devops", "gitea"],
+  "runner": ["devops", "gitea"],
+  "renovate": ["devops", "renovate"],
+  
+  // dapps/
+  "glance": ["dapps", "glance"],
+  "portainer": ["dapps", "portainer"],
+  "jellyfin": ["dapps", "jellyfin"],
+  "swingmusic": ["dapps", "swingmusic"],
+  "qbittorrent": ["dapps", "qbittorrent"],
+  "openwebui": ["dapps", "openwebui"],
+  "big-bear-open-webui": ["dapps", "openwebui"],
+  "excalidraw": ["dapps", "excalidraw"],
+  "vidown": ["dapps", "vidown"],
+  "anyconv": ["dapps", "anyconverter"],
+  "convertx": ["dapps", "convertx"],
+  "filemanager": ["dapps", "filemanager"],
+  "steam": ["dapps", "steam-headless"],
+  "affine": ["dapps", "affine"],
+  "gitlab": ["devops", "gitlab"],
+  "gitlab-runner": ["devops", "gitlab"],
+};
 
 export interface ContainerInfo {
   id: string;
@@ -20,224 +45,372 @@ export interface ContainerInfo {
   image: string;
   state: "running" | "paused" | "exited" | "created" | "dead";
   status: string;
-  traefikUrl: string | null;
-  cloudflareUrl: string | null;
+  url: string | null;
   ports: string[];
-  group: string | null;
+  category: string | null;
+  subgroup: string | null;
 }
 
-export interface ContainerGroup {
+export interface Subgroup {
   name: string;
   containers: ContainerInfo[];
   runningCount: number;
   totalCount: number;
+  url: string | null; // Main URL for the subgroup
 }
 
-function extractTraefikUrl(labels: Record<string, string>): string | null {
-  for (const [key, value] of Object.entries(labels)) {
-    if (key.includes("traefik") && key.includes("rule")) {
-      const hostMatch = value.match(/Host\(`([^`]+)`\)/i);
+export interface Category {
+  name: string;
+  subgroups: Subgroup[];
+  runningCount: number;
+  totalCount: number;
+}
+
+interface TraefikRouter {
+  rule: string;
+  service: string;
+  entryPoints?: string[];
+  middlewares?: string[];
+}
+
+interface TraefikService {
+  loadBalancer?: {
+    servers: Array<{ url: string }>;
+  };
+}
+
+interface TraefikConfig {
+  http?: {
+    routers?: Record<string, TraefikRouter>;
+    services?: Record<string, TraefikService>;
+  };
+}
+
+interface DockerCLIOutput {
+  ID: string;
+  Names: string;
+  Image: string;
+  State: string;
+  Status: string;
+  Labels: string;
+  Ports: string;
+}
+
+// Parse Traefik config to build a map of container -> URL
+async function parseTraefikConfig(): Promise<Map<string, { traefikUrl: string; serviceName: string }>> {
+  const urlMap = new Map<string, { traefikUrl: string; serviceName: string }>();
+  
+  try {
+    const configContent = await readFile(TRAEFIK_CONFIG_PATH, "utf-8");
+    const config: TraefikConfig = parseYaml(configContent);
+    
+    if (!config.http?.routers || !config.http?.services) {
+      return urlMap;
+    }
+    
+    // Build router -> host mapping
+    const routerHosts = new Map<string, string>();
+    for (const [, router] of Object.entries(config.http.routers)) {
+      // Extract first host from rule like: Host(`home.jr4.in`) || Host(`glance.jr4.in`)
+      const hostMatch = router.rule.match(/Host\(`([^`]+)`\)/);
       if (hostMatch) {
-        return `https://${hostMatch[1]}`;
+        routerHosts.set(router.service, `http://${hostMatch[1]}`);
       }
     }
+    
+    // Build container name -> URL mapping from services
+    for (const [serviceName, service] of Object.entries(config.http.services)) {
+      if (service.loadBalancer?.servers?.[0]?.url) {
+        const backendUrl = service.loadBalancer.servers[0].url;
+        // Extract container name from URL like http://glance:8080 or http://host.docker.internal:9000
+        const urlMatch = backendUrl.match(/https?:\/\/([^:\/]+)/);
+        if (urlMatch) {
+          const containerName = urlMatch[1];
+          const traefikUrl = routerHosts.get(serviceName);
+          if (traefikUrl && containerName !== "host.docker.internal" && !containerName.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+            urlMap.set(containerName.toLowerCase(), { traefikUrl, serviceName });
+          } else if (traefikUrl) {
+            // For host.docker.internal entries, store by service name
+            urlMap.set(serviceName.toLowerCase(), { traefikUrl, serviceName });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Failed to parse Traefik config:", error);
   }
-  return null;
+  
+  return urlMap;
 }
 
-function extractCloudflareUrl(labels: Record<string, string>): string | null {
-  const cfLabel = labels["cloudflare.tunnel.url"] || labels["cf.tunnel.url"];
-  if (cfLabel) {
-    return cfLabel.startsWith("http") ? cfLabel : `https://${cfLabel}`;
+function parseLabels(labelsStr: string): Record<string, string> {
+  const labels: Record<string, string> = {};
+  if (!labelsStr) return labels;
+  
+  // Split by comma, but be careful about commas in values? 
+  // Docker format is usually key=value,key2=value2
+  // We'll assume simple splitting for now as complex labels are rare in this context
+  const parts = labelsStr.split(",");
+  for (const part of parts) {
+    const eqIndex = part.indexOf("=");
+    if (eqIndex !== -1) {
+      const key = part.substring(0, eqIndex).trim();
+      const value = part.substring(eqIndex + 1).trim();
+      labels[key] = value;
+    }
   }
-  return null;
+  return labels;
 }
 
-function extractGroup(name: string, labels: Record<string, string>): string | null {
-  // Check for docker-compose project label first
+function parsePorts(portsStr: string): string[] {
+    if (!portsStr) return [];
+    // 0.0.0.0:80->80/tcp, :::80->80/tcp
+    return portsStr.split(",")
+        .map(p => p.trim())
+        .filter(p => p.includes("->"))
+        .map(p => {
+            // Extract "80" from "0.0.0.0:80->80/tcp"
+            // Or "8080" from "0.0.0.0:8080->80/tcp"
+            const match = p.match(/:(\d+)->/);
+            if (match) {
+                const port = match[1];
+                const proto = p.includes("/udp") ? "udp" : "tcp";
+                return `${port}:${port}/${proto}`; // Simplified for display
+            }
+            return "";
+        })
+        .filter(Boolean);
+}
+
+function extractCategoryAndSubgroup(name: string, labels: Record<string, string>): [string | null, string | null] {
+  // Check for custom labels first
+  const customCategory = labels["dashboard.category"];
+  const customSubgroup = labels["dashboard.subgroup"];
+  if (customCategory) {
+    return [customCategory, customSubgroup || name];
+  }
+
+  const lowerName = name.toLowerCase();
+  
+  // Check against our service mapping
+  for (const [pattern, [category, subgroup]] of Object.entries(SERVICE_MAPPING)) {
+    if (lowerName.includes(pattern)) {
+      return [category, subgroup];
+    }
+  }
+
+  // Fallback: Check for docker-compose project label
   const composeProject = labels["com.docker.compose.project"];
   if (composeProject) {
-    return composeProject;
+    const projectLower = composeProject.toLowerCase();
+    
+    // Determine category
+    let category = "dapps";
+    if (projectLower.includes("gitea") || projectLower.includes("renovate")) {
+      category = "devops";
+    } else if (projectLower.includes("traefik") || projectLower.includes("cloudflare") || projectLower.includes("database")) {
+      category = "infra";
+    }
+    
+    return [category, composeProject];
   }
 
-  // Check for custom group label
-  const customGroup = labels["dashboard.group"];
-  if (customGroup) {
-    return customGroup;
-  }
+  return [null, null];
+}
 
-  // Infer from name patterns: stack_service or stack-service
-  const underscoreMatch = name.match(/^([a-z0-9]+)_/i);
-  if (underscoreMatch) {
-    return underscoreMatch[1];
+function findTraefikUrl(
+  containerName: string, 
+  traefikMap: Map<string, { traefikUrl: string; serviceName: string }>
+): string | null {
+  const lowerName = containerName.toLowerCase();
+  
+  // Direct match
+  if (traefikMap.has(lowerName)) {
+    return traefikMap.get(lowerName)!.traefikUrl;
   }
-
-  const dashMatch = name.match(/^([a-z0-9]+)-[a-z]/i);
-  if (dashMatch && dashMatch[1].length > 2) {
-    return dashMatch[1];
+  
+  // Try to match by checking if container name contains service name or vice versa
+  for (const [key, value] of traefikMap) {
+    if (lowerName.includes(key) || key.includes(lowerName)) {
+      return value.traefikUrl;
+    }
+    // Also check if container name matches service name pattern
+    if (lowerName.includes(value.serviceName.toLowerCase())) {
+      return value.traefikUrl;
+    }
   }
-
+  
   return null;
 }
 
-function formatPorts(ports: DockerContainer["Ports"]): string[] {
-  return ports
-    .filter((p) => p.PublicPort)
-    .map((p) => `${p.PublicPort}:${p.PrivatePort}/${p.Type}`);
-}
-
-function mapContainer(c: DockerContainer): ContainerInfo {
-  const name = c.Names[0]?.replace(/^\//, "") || "unnamed";
+function mapCLIContainer(
+  c: DockerCLIOutput, 
+  traefikMap: Map<string, { traefikUrl: string; serviceName: string }>
+): ContainerInfo {
+  const name = c.Names; // Docker CLI Names is a single string (e.g. "container_name")
+  const url = findTraefikUrl(name, traefikMap);
+  const labels = parseLabels(c.Labels);
+  const [category, subgroup] = extractCategoryAndSubgroup(name, labels);
+  
   return {
-    id: c.Id.slice(0, 12),
+    id: c.ID.slice(0, 12),
     name,
     image: c.Image.split(":")[0].split("/").pop() || c.Image,
     state: c.State as ContainerInfo["state"],
     status: c.Status,
-    traefikUrl: extractTraefikUrl(c.Labels),
-    cloudflareUrl: extractCloudflareUrl(c.Labels),
-    ports: formatPorts(c.Ports),
-    group: extractGroup(name, c.Labels),
+    url,
+    ports: parsePorts(c.Ports),
+    category,
+    subgroup,
   };
 }
 
-async function fetchContainersFromSocket(): Promise<ContainerInfo[]> {
-  const socketPath = process.env.DOCKER_SOCKET || "/var/run/docker.sock";
-  const response = await fetch(`http://localhost/containers/json?all=true`, {
-    // @ts-expect-error - Node.js specific option for unix socket
-    unix: socketPath,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Docker API error: ${response.status}`);
-  }
-
-  const containers: DockerContainer[] = await response.json();
-  return containers.map(mapContainer);
-}
-
-async function fetchContainersViaCurl(): Promise<ContainerInfo[]> {
-  const socketPath = process.env.DOCKER_SOCKET || "/var/run/docker.sock";
+async function fetchContainersViaCLI(): Promise<DockerCLIOutput[]> {
   const { exec } = await import("child_process");
   const { promisify } = await import("util");
   const execAsync = promisify(exec);
 
-  const { stdout } = await execAsync(
-    `curl -s --unix-socket ${socketPath} http://localhost/containers/json?all=true`
-  );
+  try {
+    // --no-trunc is important for full labels
+    const { stdout } = await execAsync(
+      `docker ps -a --no-trunc --format "{{json .}}"`
+    );
 
-  const containers: DockerContainer[] = JSON.parse(stdout);
-  return containers.map(mapContainer);
+    return stdout
+        .trim()
+        .split("\n")
+        .filter(line => line.trim())
+        .map(line => JSON.parse(line));
+  } catch (e) {
+    console.error("Docker CLI error:", e);
+    throw e;
+  }
 }
 
-function getMockContainers(): ContainerInfo[] {
-  return [
-    // Standalone services
-    { id: "a1b2c3d4e5f6", name: "traefik", image: "traefik", state: "running", status: "Up 5 days", traefikUrl: null, cloudflareUrl: null, ports: ["80:80/tcp", "443:443/tcp"], group: null },
-    { id: "b2c3d4e5f6g7", name: "portainer", image: "portainer-ce", state: "running", status: "Up 5 days", traefikUrl: "https://portainer.home.local", cloudflareUrl: "https://portainer.example.com", ports: ["9443:9443/tcp"], group: null },
-    { id: "c3d4e5f6g7h8", name: "watchtower", image: "watchtower", state: "running", status: "Up 5 days", traefikUrl: null, cloudflareUrl: null, ports: [], group: null },
-    
-    // Nextcloud stack
-    { id: "nc001", name: "nextcloud_app", image: "nextcloud", state: "running", status: "Up 3 days", traefikUrl: "https://cloud.home.local", cloudflareUrl: "https://cloud.example.com", ports: ["80:80/tcp"], group: "nextcloud" },
-    { id: "nc002", name: "nextcloud_db", image: "mariadb", state: "running", status: "Up 3 days", traefikUrl: null, cloudflareUrl: null, ports: [], group: "nextcloud" },
-    { id: "nc003", name: "nextcloud_redis", image: "redis", state: "running", status: "Up 3 days", traefikUrl: null, cloudflareUrl: null, ports: [], group: "nextcloud" },
-    
-    // Media stack
-    { id: "med001", name: "media_jellyfin", image: "jellyfin", state: "running", status: "Up 2 days", traefikUrl: "https://media.home.local", cloudflareUrl: "https://media.example.com", ports: ["8096:8096/tcp"], group: "media" },
-    { id: "med002", name: "media_sonarr", image: "sonarr", state: "running", status: "Up 2 days", traefikUrl: "https://sonarr.home.local", cloudflareUrl: null, ports: ["8989:8989/tcp"], group: "media" },
-    { id: "med003", name: "media_radarr", image: "radarr", state: "running", status: "Up 2 days", traefikUrl: "https://radarr.home.local", cloudflareUrl: null, ports: ["7878:7878/tcp"], group: "media" },
-    { id: "med004", name: "media_prowlarr", image: "prowlarr", state: "running", status: "Up 2 days", traefikUrl: "https://prowlarr.home.local", cloudflareUrl: null, ports: ["9696:9696/tcp"], group: "media" },
-    { id: "med005", name: "media_qbittorrent", image: "qbittorrent", state: "running", status: "Up 2 days", traefikUrl: "https://qbit.home.local", cloudflareUrl: null, ports: ["8080:8080/tcp"], group: "media" },
-    
-    // Home automation
-    { id: "ha001", name: "home_homeassistant", image: "home-assistant", state: "running", status: "Up 7 days", traefikUrl: "https://ha.home.local", cloudflareUrl: "https://ha.example.com", ports: ["8123:8123/tcp"], group: "home" },
-    { id: "ha002", name: "home_mqtt", image: "mosquitto", state: "running", status: "Up 7 days", traefikUrl: null, cloudflareUrl: null, ports: ["1883:1883/tcp"], group: "home" },
-    { id: "ha003", name: "home_zigbee2mqtt", image: "zigbee2mqtt", state: "running", status: "Up 7 days", traefikUrl: "https://z2m.home.local", cloudflareUrl: null, ports: ["8080:8080/tcp"], group: "home" },
-    { id: "ha004", name: "home_nodered", image: "nodered", state: "running", status: "Up 7 days", traefikUrl: "https://nodered.home.local", cloudflareUrl: null, ports: ["1880:1880/tcp"], group: "home" },
-    
-    // Monitoring stack
-    { id: "mon001", name: "monitoring_grafana", image: "grafana", state: "running", status: "Up 10 days", traefikUrl: "https://grafana.home.local", cloudflareUrl: null, ports: ["3000:3000/tcp"], group: "monitoring" },
-    { id: "mon002", name: "monitoring_prometheus", image: "prometheus", state: "running", status: "Up 10 days", traefikUrl: null, cloudflareUrl: null, ports: ["9090:9090/tcp"], group: "monitoring" },
-    { id: "mon003", name: "monitoring_loki", image: "loki", state: "running", status: "Up 10 days", traefikUrl: null, cloudflareUrl: null, ports: [], group: "monitoring" },
-    { id: "mon004", name: "monitoring_promtail", image: "promtail", state: "running", status: "Up 10 days", traefikUrl: null, cloudflareUrl: null, ports: [], group: "monitoring" },
-    
-    // Network
-    { id: "net001", name: "pihole", image: "pihole", state: "running", status: "Up 10 days", traefikUrl: "https://dns.home.local", cloudflareUrl: null, ports: ["53:53/udp"], group: null },
-    { id: "net002", name: "vaultwarden", image: "vaultwarden", state: "running", status: "Up 14 days", traefikUrl: "https://vault.home.local", cloudflareUrl: "https://vault.example.com", ports: [], group: null },
-    
-    // Stopped
-    { id: "old001", name: "old-backup-db", image: "postgres", state: "exited", status: "Exited (0) 2 weeks ago", traefikUrl: null, cloudflareUrl: null, ports: [], group: null },
-  ];
-}
-
-function groupContainers(containers: ContainerInfo[]): { groups: ContainerGroup[]; standalone: ContainerInfo[] } {
-  const groupMap = new Map<string, ContainerInfo[]>();
-  const standalone: ContainerInfo[] = [];
+function organizeContainers(containers: ContainerInfo[]): { categories: Category[]; uncategorized: ContainerInfo[] } {
+  // Category order
+  const categoryOrder = ["dapps", "devops", "infra"];
+  
+  // Build nested structure: category -> subgroup -> containers
+  const categoryMap = new Map<string, Map<string, ContainerInfo[]>>();
+  const uncategorized: ContainerInfo[] = [];
 
   for (const container of containers) {
-    if (container.group) {
-      const existing = groupMap.get(container.group) || [];
-      existing.push(container);
-      groupMap.set(container.group, existing);
+    if (container.category && container.subgroup) {
+      if (!categoryMap.has(container.category)) {
+        categoryMap.set(container.category, new Map());
+      }
+      const subgroupMap = categoryMap.get(container.category)!;
+      if (!subgroupMap.has(container.subgroup)) {
+        subgroupMap.set(container.subgroup, []);
+      }
+      subgroupMap.get(container.subgroup)!.push(container);
     } else {
-      standalone.push(container);
+      uncategorized.push(container);
     }
   }
 
-  const groups: ContainerGroup[] = [];
-  for (const [name, groupContainers] of groupMap) {
-    // Only create group if more than 1 container
-    if (groupContainers.length > 1) {
-      groups.push({
-        name,
-        containers: groupContainers.sort((a, b) => a.name.localeCompare(b.name)),
-        runningCount: groupContainers.filter((c) => c.state === "running").length,
-        totalCount: groupContainers.length,
-      });
-    } else {
-      standalone.push(...groupContainers);
-    }
-  }
-
-  // Sort groups by name
-  groups.sort((a, b) => a.name.localeCompare(b.name));
+  // Build category objects in order
+  const categories: Category[] = [];
   
-  // Sort standalone: running first, then by name
-  standalone.sort((a, b) => {
+  for (const categoryName of categoryOrder) {
+    const subgroupMap = categoryMap.get(categoryName);
+    if (!subgroupMap || subgroupMap.size === 0) continue;
+    
+    const subgroups: Subgroup[] = [];
+    let categoryRunning = 0;
+    let categoryTotal = 0;
+    
+    // Sort subgroups alphabetically
+    const sortedSubgroups = Array.from(subgroupMap.entries()).sort((a, b) => 
+      a[0].localeCompare(b[0])
+    );
+    
+    for (const [subgroupName, subgroupContainers] of sortedSubgroups) {
+      const running = subgroupContainers.filter(c => c.state === "running").length;
+      const total = subgroupContainers.length;
+      
+      // Find the main URL for this subgroup (first container with a URL)
+      const mainUrl = subgroupContainers.find(c => c.url)?.url || null;
+      
+      subgroups.push({
+        name: subgroupName,
+        containers: subgroupContainers.sort((a, b) => a.name.localeCompare(b.name)),
+        runningCount: running,
+        totalCount: total,
+        url: mainUrl,
+      });
+      
+      categoryRunning += running;
+      categoryTotal += total;
+    }
+    
+    categories.push({
+      name: categoryName,
+      subgroups,
+      runningCount: categoryRunning,
+      totalCount: categoryTotal,
+    });
+    
+    categoryMap.delete(categoryName);
+  }
+  
+  // Add any remaining categories
+  for (const [categoryName, subgroupMap] of categoryMap) {
+    const subgroups: Subgroup[] = [];
+    let categoryRunning = 0;
+    let categoryTotal = 0;
+    
+    for (const [subgroupName, subgroupContainers] of subgroupMap) {
+      const running = subgroupContainers.filter(c => c.state === "running").length;
+      const total = subgroupContainers.length;
+      const mainUrl = subgroupContainers.find(c => c.url)?.url || null;
+      
+      subgroups.push({
+        name: subgroupName,
+        containers: subgroupContainers.sort((a, b) => a.name.localeCompare(b.name)),
+        runningCount: running,
+        totalCount: total,
+        url: mainUrl,
+      });
+      
+      categoryRunning += running;
+      categoryTotal += total;
+    }
+    
+    categories.push({
+      name: categoryName,
+      subgroups: subgroups.sort((a, b) => a.name.localeCompare(b.name)),
+      runningCount: categoryRunning,
+      totalCount: categoryTotal,
+    });
+  }
+  
+  // Sort uncategorized
+  uncategorized.sort((a, b) => {
     if (a.state === "running" && b.state !== "running") return -1;
     if (a.state !== "running" && b.state === "running") return 1;
     return a.name.localeCompare(b.name);
   });
 
-  return { groups, standalone };
+  return { categories, uncategorized };
 }
 
 export async function GET() {
-  const useMock = process.env.USE_MOCK_DATA === "true" || process.env.NODE_ENV === "development";
-
   try {
-    let containers: ContainerInfo[];
+    // Parse Traefik config to get URL mappings
+    const traefikMap = await parseTraefikConfig();
+    
+    // Fetch running containers
+    const rawContainers = await fetchContainersViaCLI();
+    const containers = rawContainers.map((c) => mapCLIContainer(c, traefikMap));
 
-    try {
-      containers = await fetchContainersFromSocket();
-    } catch {
-      try {
-        containers = await fetchContainersViaCurl();
-      } catch {
-        if (useMock) {
-          containers = getMockContainers();
-        } else {
-          throw new Error("Cannot connect to Docker daemon");
-        }
-      }
-    }
-
-    const { groups, standalone } = groupContainers(containers);
+    const { categories, uncategorized } = organizeContainers(containers);
     const running = containers.filter((c) => c.state === "running").length;
 
     return NextResponse.json({
-      groups,
-      standalone,
+      categories,
+      uncategorized,
       total: containers.length,
       running,
       timestamp: Date.now(),
