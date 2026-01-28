@@ -57,10 +57,9 @@ function StatusDot({ state }: { state: ContainerInfo["state"] }) {
 function getUrlLabel(url: string): string {
   try {
     const hostname = new URL(url).hostname;
-    const parts = hostname.split(".");
-    return parts[0] || "open";
+    return `[${hostname}]`;
   } catch {
-    return "open";
+    return "[link]";
   }
 }
 

@@ -55,7 +55,7 @@ const parseValue = (value: string) => {
 export default function TopPage() {
   const [stats, setStats] = useState<Record<string, DockerStats>>({});
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
-    key: 'CPUPerc',
+    key: 'MemPerc',
     direction: 'desc',
   });
 

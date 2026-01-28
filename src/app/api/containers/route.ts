@@ -5,7 +5,6 @@ import { parse as parseYaml } from "yaml";
 const TRAEFIK_CONFIG_PATH = process.env.TRAEFIK_CONFIG_PATH || "/home/pico/server/infra/traefik/config/dynamic/services.yaml";
 
 // Mapping: container pattern -> [category, subgroup]
-// Subgroup is used to group related containers (e.g., gitea + gitea-runner)
 const SERVICE_MAPPING: Record<string, [string, string]> = {
   // infra/
   "traefik": ["infra", "traefik"],
@@ -19,6 +18,8 @@ const SERVICE_MAPPING: Record<string, [string, string]> = {
   "gitea": ["devops", "gitea"],
   "runner": ["devops", "gitea"],
   "renovate": ["devops", "renovate"],
+  "gitlab": ["devops", "gitlab"],
+  "gitlab-runner": ["devops", "gitlab"],
   
   // dapps/
   "glance": ["dapps", "glance"],
@@ -35,8 +36,6 @@ const SERVICE_MAPPING: Record<string, [string, string]> = {
   "filemanager": ["dapps", "filemanager"],
   "steam": ["dapps", "steam-headless"],
   "affine": ["dapps", "affine"],
-  "gitlab": ["devops", "gitlab"],
-  "gitlab-runner": ["devops", "gitlab"],
 };
 
 export interface ContainerInfo {
@@ -86,14 +85,25 @@ interface TraefikConfig {
   };
 }
 
-interface DockerCLIOutput {
-  ID: string;
-  Names: string;
+// Docker API Response Interfaces
+interface DockerContainer {
+  Id: string;
+  Names: string[];
   Image: string;
+  ImageID: string;
+  Command: string;
+  Created: number;
+  Ports: Array<{ IP?: string; PrivatePort: number; PublicPort?: number; Type: string }>;
+  Labels: Record<string, string>;
   State: string;
   Status: string;
-  Labels: string;
-  Ports: string;
+  HostConfig: {
+    NetworkMode: string;
+  };
+  NetworkSettings: {
+    Networks: Record<string, unknown>;
+  };
+  Mounts: Array<unknown>;
 }
 
 // Parse Traefik config to build a map of container -> URL
@@ -143,45 +153,6 @@ async function parseTraefikConfig(): Promise<Map<string, { traefikUrl: string; s
   return urlMap;
 }
 
-function parseLabels(labelsStr: string): Record<string, string> {
-  const labels: Record<string, string> = {};
-  if (!labelsStr) return labels;
-  
-  // Split by comma, but be careful about commas in values? 
-  // Docker format is usually key=value,key2=value2
-  // We'll assume simple splitting for now as complex labels are rare in this context
-  const parts = labelsStr.split(",");
-  for (const part of parts) {
-    const eqIndex = part.indexOf("=");
-    if (eqIndex !== -1) {
-      const key = part.substring(0, eqIndex).trim();
-      const value = part.substring(eqIndex + 1).trim();
-      labels[key] = value;
-    }
-  }
-  return labels;
-}
-
-function parsePorts(portsStr: string): string[] {
-    if (!portsStr) return [];
-    // 0.0.0.0:80->80/tcp, :::80->80/tcp
-    return portsStr.split(",")
-        .map(p => p.trim())
-        .filter(p => p.includes("->"))
-        .map(p => {
-            // Extract "80" from "0.0.0.0:80->80/tcp"
-            // Or "8080" from "0.0.0.0:8080->80/tcp"
-            const match = p.match(/:(\d+)->/);
-            if (match) {
-                const port = match[1];
-                const proto = p.includes("/udp") ? "udp" : "tcp";
-                return `${port}:${port}/${proto}`; // Simplified for display
-            }
-            return "";
-        })
-        .filter(Boolean);
-}
-
 function extractCategoryAndSubgroup(name: string, labels: Record<string, string>): [string | null, string | null] {
   // Check for custom labels first
   const customCategory = labels["dashboard.category"];
@@ -193,7 +164,11 @@ function extractCategoryAndSubgroup(name: string, labels: Record<string, string>
   const lowerName = name.toLowerCase();
   
   // Check against our service mapping
-  for (const [pattern, [category, subgroup]] of Object.entries(SERVICE_MAPPING)) {
+  // Sort patterns by length descending to ensure specific matches (e.g. "gitlab-runner")
+  // take precedence over generic ones (e.g. "runner")
+  const sortedPatterns = Object.entries(SERVICE_MAPPING).sort((a, b) => b[0].length - a[0].length);
+
+  for (const [pattern, [category, subgroup]] of sortedPatterns) {
     if (lowerName.includes(pattern)) {
       return [category, subgroup];
     }
@@ -218,73 +193,120 @@ function extractCategoryAndSubgroup(name: string, labels: Record<string, string>
   return [null, null];
 }
 
+function extractUrlFromLabels(labels: Record<string, string>): string | null {
+  for (const [key, value] of Object.entries(labels)) {
+    // Look for Traefik router rules: traefik.http.routers.NAME.rule
+    if (key.includes("traefik.http.routers") && key.includes(".rule")) {
+      const hostMatch = value.match(/Host\(`([^`]+)`\)/);
+      if (hostMatch) {
+        return `http://${hostMatch[1]}`;
+      }
+    }
+  }
+  return null;
+}
+
 function findTraefikUrl(
   containerName: string, 
   traefikMap: Map<string, { traefikUrl: string; serviceName: string }>
 ): string | null {
   const lowerName = containerName.toLowerCase();
   
-  // Direct match
+  // 1. Direct match (exact name)
   if (traefikMap.has(lowerName)) {
     return traefikMap.get(lowerName)!.traefikUrl;
   }
   
-  // Try to match by checking if container name contains service name or vice versa
+  // 2. Fuzzy match
   for (const [key, value] of traefikMap) {
+    const serviceName = value.serviceName.toLowerCase();
+    
+    // Exact containment
     if (lowerName.includes(key) || key.includes(lowerName)) {
       return value.traefikUrl;
     }
-    // Also check if container name matches service name pattern
-    if (lowerName.includes(value.serviceName.toLowerCase())) {
+    
+    // Service name containment
+    if (lowerName.includes(serviceName)) {
       return value.traefikUrl;
+    }
+
+    // Special case for Steam
+    // container: steam-headless, service: steam-novnc
+    if (lowerName.includes("steam") && serviceName.includes("steam")) {
+        return value.traefikUrl;
     }
   }
   
   return null;
 }
 
-function mapCLIContainer(
-  c: DockerCLIOutput, 
+function mapDockerContainer(
+  c: DockerContainer, 
   traefikMap: Map<string, { traefikUrl: string; serviceName: string }>
 ): ContainerInfo {
-  const name = c.Names; // Docker CLI Names is a single string (e.g. "container_name")
-  const url = findTraefikUrl(name, traefikMap);
-  const labels = parseLabels(c.Labels);
-  const [category, subgroup] = extractCategoryAndSubgroup(name, labels);
+  // Docker API returns Names as ["/name"], strip leading slash
+  const name = c.Names[0]?.replace(/^\//, "") || c.Id.slice(0, 12);
   
+  // Try to find URL via Traefik config first, then fall back to direct labels
+  let url = findTraefikUrl(name, traefikMap);
+  if (!url) {
+    url = extractUrlFromLabels(c.Labels);
+  }
+
+  const [category, subgroup] = extractCategoryAndSubgroup(name, c.Labels);
+  
+  // Parse Ports
+  const ports = c.Ports.map(p => {
+      // Format: 8080:80/tcp
+      if (p.PublicPort) {
+          return `${p.PublicPort}:${p.PrivatePort}/${p.Type}`;
+      }
+      return `${p.PrivatePort}/${p.Type}`;
+  });
+
   return {
-    id: c.ID.slice(0, 12),
+    id: c.Id.slice(0, 12),
     name,
     image: c.Image.split(":")[0].split("/").pop() || c.Image,
     state: c.State as ContainerInfo["state"],
     status: c.Status,
     url,
-    ports: parsePorts(c.Ports),
+    ports,
     category,
     subgroup,
   };
 }
 
-async function fetchContainersViaCLI(): Promise<DockerCLIOutput[]> {
-  const { exec } = await import("child_process");
-  const { promisify } = await import("util");
-  const execAsync = promisify(exec);
+async function fetchContainersViaSocket(): Promise<DockerContainer[]> {
+  const { request } = await import("http");
 
-  try {
-    // --no-trunc is important for full labels
-    const { stdout } = await execAsync(
-      `docker ps -a --no-trunc --format "{{json .}}"`
-    );
+  return new Promise((resolve, reject) => {
+    const options = {
+      socketPath: "/var/run/docker.sock",
+      path: "/containers/json?all=1",
+      method: "GET",
+    };
 
-    return stdout
-        .trim()
-        .split("\n")
-        .filter(line => line.trim())
-        .map(line => JSON.parse(line));
-  } catch (e) {
-    console.error("Docker CLI error:", e);
-    throw e;
-  }
+    const req = request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => {
+        try {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(JSON.parse(data));
+          } else {
+            reject(new Error(`Docker API Error: ${res.statusCode} - ${data}`));
+          }
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    req.on("error", (e) => reject(e));
+    req.end();
+  });
 }
 
 function organizeContainers(containers: ContainerInfo[]): { categories: Category[]; uncategorized: ContainerInfo[] } {
@@ -401,9 +423,9 @@ export async function GET() {
     // Parse Traefik config to get URL mappings
     const traefikMap = await parseTraefikConfig();
     
-    // Fetch running containers
-    const rawContainers = await fetchContainersViaCLI();
-    const containers = rawContainers.map((c) => mapCLIContainer(c, traefikMap));
+    // Fetch running containers via Socket
+    const rawContainers = await fetchContainersViaSocket();
+    const containers = rawContainers.map((c) => mapDockerContainer(c, traefikMap));
 
     const { categories, uncategorized } = organizeContainers(containers);
     const running = containers.filter((c) => c.state === "running").length;
