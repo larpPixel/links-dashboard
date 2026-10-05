@@ -1,0 +1,1650 @@
+diff --git a/.dockerignore b/.dockerignore
+deleted file mode 100644
+index 269149b..0000000
+--- a/.dockerignore
++++ /dev/null
+@@ -1,42 +0,0 @@
+-# Dependencies
+-node_modules
+-npm-debug.log
+-yarn-debug.log
+-yarn-error.log
+-bun.lock
+-
+-# Next.js
+-.next
+-out
+-
+-# Testing
+-coverage
+-
+-# Production
+-build
+-
+-# Misc
+-.DS_Store
+-*.pem
+-
+-# Debug
+-npm-debug.log*
+-yarn-debug.log*
+-yarn-error.log*
+-
+-# Local env files
+-.env*.local
+-.env
+-
+-# IDE
+-.vscode
+-.idea
+-
+-# Git
+-.git
+-.gitignore
+-
+-# Docker
+-Dockerfile
+-docker-compose*.yml
+-.dockerignore
+diff --git a/Dockerfile b/Dockerfile
+deleted file mode 100644
+index 9c7b9ca..0000000
+--- a/Dockerfile
++++ /dev/null
+@@ -1,53 +0,0 @@
+-# syntax=docker/dockerfile:1
+-
+-# Stage 1: Dependencies
+-FROM node:20-alpine AS deps
+-WORKDIR /app
+-
+-# Install curl for Docker socket communication fallback
+-RUN apk add --no-cache curl
+-
+-COPY package.json bun.lock* package-lock.json* yarn.lock* pnpm-lock.yaml* ./
+-
+-# Use npm since bun may not be available
+-RUN npm install --legacy-peer-deps
+-
+-# Stage 2: Build
+-FROM node:20-alpine AS builder
+-WORKDIR /app
+-
+-COPY --from=deps /app/node_modules ./node_modules
+-COPY . .
+-
+-# Build the Next.js app
+-RUN npm run build
+-
+-# Stage 3: Production
+-FROM node:20-alpine AS runner
+-WORKDIR /app
+-
+-ENV NODE_ENV=production
+-ENV NEXT_TELEMETRY_DISABLED=1
+-
+-# Install curl and docker-cli for container management
+-RUN apk add --no-cache curl docker-cli
+-
+-# Create non-root user
+-RUN addgroup --system --gid 1001 nodejs
+-RUN adduser --system --uid 1001 nextjs
+-
+-# Copy built assets
+-COPY --from=builder /app/public ./public
+-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+-
+-# The Docker socket will be mounted at runtime
+-# User needs to be in docker group or socket needs correct permissions
+-USER nextjs
+-
+-EXPOSE 3000
+-
+-ENV PORT=3000
+-ENV HOSTNAME="0.0.0.0"
+-
+-CMD ["node", "server.js"]
+diff --git a/LICENSE b/LICENSE
+deleted file mode 100644
+index cd8eee6..0000000
+--- a/LICENSE
++++ /dev/null
+@@ -1,18 +0,0 @@
+-MIT License
+-
+-Copyright (c) 2026 jR4dh3y
+-
+-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and 
+-associated documentation files (the "Software"), to deal in the Software without restriction, including 
+-without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+-copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the 
+-following conditions:
+-
+-The above copyright notice and this permission notice shall be included in all copies or substantial 
+-portions of the Software.
+-
+-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT 
+-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO 
+-EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE 
+-USE OR OTHER DEALINGS IN THE SOFTWARE.
+diff --git a/README.md b/README.md
+index 6936cff..e215bc4 100644
+--- a/README.md
++++ b/README.md
+@@ -1,2 +1,36 @@
+-# links-dashboard
++This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+ 
++## Getting Started
++
++First, run the development server:
++
++```bash
++npm run dev
++# or
++yarn dev
++# or
++pnpm dev
++# or
++bun dev
++```
++
++Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
++
++You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
++
++This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
++
++## Learn More
++
++To learn more about Next.js, take a look at the following resources:
++
++- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
++- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
++
++You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
++
++## Deploy on Vercel
++
++The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
++
++Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+diff --git a/SKILL.md b/SKILL.md
+deleted file mode 100644
+index 600b6db..0000000
+--- a/SKILL.md
++++ /dev/null
+@@ -1,42 +0,0 @@
+----
+-name: frontend-design
+-description: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, or applications. Generates creative, polished code that avoids generic AI aesthetics.
+-license: Complete terms in LICENSE.txt
+----
+-
+-This skill guides creation of distinctive, production-grade frontend interfaces that avoid generic "AI slop" aesthetics. Implement real working code with exceptional attention to aesthetic details and creative choices.
+-
+-The user provides frontend requirements: a component, page, application, or interface to build. They may include context about the purpose, audience, or technical constraints.
+-
+-## Design Thinking
+-
+-Before coding, understand the context and commit to a BOLD aesthetic direction:
+-- **Purpose**: What problem does this interface solve? Who uses it?
+-- **Tone**: Pick an extreme: brutally minimal, maximalist chaos, retro-futuristic, organic/natural, luxury/refined, playful/toy-like, editorial/magazine, brutalist/raw, art deco/geometric, soft/pastel, industrial/utilitarian, etc. There are so many flavors to choose from. Use these for inspiration but design one that is true to the aesthetic direction.
+-- **Constraints**: Technical requirements (framework, performance, accessibility).
+-- **Differentiation**: What makes this UNFORGETTABLE? What's the one thing someone will remember?
+-
+-**CRITICAL**: Choose a clear conceptual direction and execute it with precision. Bold maximalism and refined minimalism both work - the key is intentionality, not intensity.
+-
+-Then implement working code (HTML/CSS/JS, React, Vue, etc.) that is:
+-- Production-grade and functional
+-- Visually striking and memorable
+-- Cohesive with a clear aesthetic point-of-view
+-- Meticulously refined in every detail
+-
+-## Frontend Aesthetics Guidelines
+-
+-Focus on:
+-- **Typography**: Choose fonts that are beautiful, unique, and interesting. Avoid generic fonts like Arial and Inter; opt instead for distinctive choices that elevate the frontend's aesthetics; unexpected, characterful font choices. Pair a distinctive display font with a refined body font.
+-- **Color & Theme**: Commit to a cohesive aesthetic. Use CSS variables for consistency. Dominant colors with sharp accents outperform timid, evenly-distributed palettes.
+-- **Motion**: Use animations for effects and micro-interactions. Prioritize CSS-only solutions for HTML. Use Motion library for React when available. Focus on high-impact moments: one well-orchestrated page load with staggered reveals (animation-delay) creates more delight than scattered micro-interactions. Use scroll-triggering and hover states that surprise.
+-- **Spatial Composition**: Unexpected layouts. Asymmetry. Overlap. Diagonal flow. Grid-breaking elements. Generous negative space OR controlled density.
+-- **Backgrounds & Visual Details**: Create atmosphere and depth rather than defaulting to solid colors. Add contextual effects and textures that match the overall aesthetic. Apply creative forms like gradient meshes, noise textures, geometric patterns, layered transparencies, dramatic shadows, decorative borders, custom cursors, and grain overlays.
+-
+-NEVER use generic AI-generated aesthetics like overused font families (Inter, Roboto, Arial, system fonts), cliched color schemes (particularly purple gradients on white backgrounds), predictable layouts and component patterns, and cookie-cutter design that lacks context-specific character.
+-
+-Interpret creatively and make unexpected choices that feel genuinely designed for the context. No design should be the same. Vary between light and dark themes, different fonts, different aesthetics. NEVER converge on common choices (Space Grotesk, for example) across generations.
+-
+-**IMPORTANT**: Match implementation complexity to the aesthetic vision. Maximalist designs need elaborate code with extensive animations and effects. Minimalist or refined designs need restraint, precision, and careful attention to spacing, typography, and subtle details. Elegance comes from executing the vision well.
+-
+-Remember: Claude is capable of extraordinary creative work. Don't hold back, show what can truly be created when thinking outside the box and committing fully to a distinctive vision.
+\ No newline at end of file
+diff --git a/TODO.md b/TODO.md
+deleted file mode 100644
+index 147e572..0000000
+--- a/TODO.md
++++ /dev/null
+@@ -1,23 +0,0 @@
+-# Future Improvements
+-
+-- [ ] **Refactor to Label-Based Discovery**: 
+-  - Remove hardcoded `SERVICE_MAPPING` and `services.yaml` parsing.
+-  - Implement logic to read `dashboard.category`, `dashboard.name`, and `dashboard.url` labels directly from containers.
+-  - Fallback to reading standard `traefik.http.routers.*.rule` labels on the container itself for URL discovery.
+-
+-- [ ] **Architecture Debloat (Migration to Lightweight Stack)**:
+-  - **Goal:** Replace heavy Next.js framework with a minimal, resource-efficient stack (~150MB RAM -> ~20MB RAM).
+-  - **Backend:**
+-    - Create a single-file Node.js server (using `Fastify` or native `http` module).
+-    - API Endpoints:
+-      - `GET /api/containers`: Query Docker Socket directly for container list.
+-      - `GET /api/stats`: Stream real-time stats from Docker Socket (Server-Sent Events).
+-    - Serve static frontend assets directly.
+-  - **Frontend:**
+-    - Rewrite UI in **Vanilla JS** or **Alpine.js** (remove React/ReactDOM bundle).
+-    - Replace Tailwind CSS with a minimal raw CSS file (~200 lines).
+-    - Single `index.html` architecture.
+-  - **Benefits:**
+-    - Zero build time (no Webpack/Turbopack).
+-    - Minimal runtime dependencies.
+-    - Drastically reduced memory and CPU footprint.
+diff --git a/bun.lock b/bun.lock
+index 50c4e4c..6650e6b 100644
+--- a/bun.lock
++++ b/bun.lock
+@@ -8,7 +8,6 @@
+         "next": "16.1.5",
+         "react": "19.2.3",
+         "react-dom": "19.2.3",
+-        "yaml": "^2.8.2",
+       },
+       "devDependencies": {
+         "@tailwindcss/postcss": "^4",
+@@ -842,8 +841,6 @@
+ 
+     "yallist": ["yallist@3.1.1", "", {}, "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g=="],
+ 
+-    "yaml": ["yaml@2.8.2", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-mplynKqc1C2hTVYxd0PU2xQAc22TI1vShAYGksCCfxbn/dFwnHTNi1bvYsBTkhdUNtGIf5xNOg938rrSSYvS9A=="],
+-
+     "yocto-queue": ["yocto-queue@0.1.0", "", {}, "sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q=="],
+ 
+     "zod": ["zod@4.3.6", "", {}, "sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg=="],
+diff --git a/docker-compose.yml b/docker-compose.yml
+deleted file mode 100644
+index 36d41dd..0000000
+--- a/docker-compose.yml
++++ /dev/null
+@@ -1,32 +0,0 @@
+-services:
+-  docker-dashboard:
+-    build: .
+-    container_name: docker-dashboard
+-    restart: unless-stopped
+-    ports:
+-      - "3333:3000"
+-    volumes:
+-      # Mount Docker socket for container access (read-only)
+-      - /var/run/docker.sock:/var/run/docker.sock:ro
+-    environment:
+-      - DOCKER_SOCKET=/var/run/docker.sock
+-    # For proper Docker socket access, either:
+-    # 1. Run as root (less secure)
+-    # 2. Add user to docker group on host
+-    # 3. Set socket permissions
+-    user: root
+-    labels:
+-      # Traefik labels (adjust domain as needed)
+-      - "traefik.enable=true"
+-      - "traefik.http.routers.dashboard.rule=Host(`dashboard.local`)"
+-      - "traefik.http.routers.dashboard.entrypoints=websecure"
+-      - "traefik.http.routers.dashboard.tls=true"
+-      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+-      # Cloudflare tunnel label (set your tunnel URL)
+-      - "cloudflare.tunnel.url=https://dashboard.yourdomain.com"
+-    networks:
+-      - web
+-
+-networks:
+-  web:
+-    external: true
+diff --git a/links-dashboard.service b/links-dashboard.service
+deleted file mode 100644
+index 7a40735..0000000
+--- a/links-dashboard.service
++++ /dev/null
+@@ -1,18 +0,0 @@
+-[Unit]
+-Description=Links Dashboard
+-After=network.target
+-
+-[Service]
+-User=pico
+-Group=pico
+-WorkingDirectory=/home/pico/links-dashboard
+-Environment=NODE_ENV=production
+-Environment=PORT=3000
+-# Ensure bun is in the path or use absolute path
+-ExecStart=/home/pico/.bun/bin/bun run start
+-Restart=always
+-# Restart service after 10 seconds if it crashes
+-RestartSec=10
+-
+-[Install]
+-WantedBy=multi-user.target
+diff --git a/next.config.ts b/next.config.ts
+index fdfc499..66e1566 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -1,7 +1,7 @@
+ import type { NextConfig } from "next";
+ 
+ const nextConfig: NextConfig = {
+-  output: "standalone",
++  /* config options here */
+   reactCompiler: true,
+ };
+ 
+diff --git a/package.json b/package.json
+index d197a5a..5ad93c9 100644
+--- a/package.json
++++ b/package.json
+@@ -11,8 +11,7 @@
+   "dependencies": {
+     "next": "16.1.5",
+     "react": "19.2.3",
+-    "react-dom": "19.2.3",
+-    "yaml": "^2.8.2"
++    "react-dom": "19.2.3"
+   },
+   "devDependencies": {
+     "@tailwindcss/postcss": "^4",
+diff --git a/src/app/api/containers/route.ts b/src/app/api/containers/route.ts
+deleted file mode 100644
+index 833cbf8..0000000
+--- a/src/app/api/containers/route.ts
++++ /dev/null
+@@ -1,450 +0,0 @@
+-import { NextResponse } from "next/server";
+-import { readFile } from "fs/promises";
+-import { parse as parseYaml } from "yaml";
+-
+-const TRAEFIK_CONFIG_PATH = process.env.TRAEFIK_CONFIG_PATH || "/home/pico/server/infra/traefik/config/dynamic/services.yaml";
+-
+-// Mapping: container pattern -> [category, subgroup]
+-const SERVICE_MAPPING: Record<string, [string, string]> = {
+-  // infra/
+-  "traefik": ["infra", "traefik"],
+-  "cloudflared": ["infra", "cloudflared"],
+-  "postgres": ["infra", "databases"],
+-  "mariadb": ["infra", "databases"],
+-  "mysql": ["infra", "databases"],
+-  "redis": ["infra", "databases"],
+-  
+-  // devops/
+-  "gitea": ["devops", "gitea"],
+-  "runner": ["devops", "gitea"],
+-  "renovate": ["devops", "renovate"],
+-  "gitlab": ["devops", "gitlab"],
+-  "gitlab-runner": ["devops", "gitlab"],
+-  
+-  // dapps/
+-  "glance": ["dapps", "glance"],
+-  "portainer": ["dapps", "portainer"],
+-  "jellyfin": ["dapps", "jellyfin"],
+-  "swingmusic": ["dapps", "swingmusic"],
+-  "qbittorrent": ["dapps", "qbittorrent"],
+-  "openwebui": ["dapps", "openwebui"],
+-  "big-bear-open-webui": ["dapps", "openwebui"],
+-  "excalidraw": ["dapps", "excalidraw"],
+-  "vidown": ["dapps", "vidown"],
+-  "anyconv": ["dapps", "anyconverter"],
+-  "convertx": ["dapps", "convertx"],
+-  "filemanager": ["dapps", "filemanager"],
+-  "steam": ["dapps", "steam-headless"],
+-  "affine": ["dapps", "affine"],
+-};
+-
+-export interface ContainerInfo {
+-  id: string;
+-  name: string;
+-  image: string;
+-  state: "running" | "paused" | "exited" | "created" | "dead";
+-  status: string;
+-  url: string | null;
+-  ports: string[];
+-  category: string | null;
+-  subgroup: string | null;
+-}
+-
+-export interface Subgroup {
+-  name: string;
+-  containers: ContainerInfo[];
+-  runningCount: number;
+-  totalCount: number;
+-  url: string | null; // Main URL for the subgroup
+-}
+-
+-export interface Category {
+-  name: string;
+-  subgroups: Subgroup[];
+-  runningCount: number;
+-  totalCount: number;
+-}
+-
+-interface TraefikRouter {
+-  rule: string;
+-  service: string;
+-  entryPoints?: string[];
+-  middlewares?: string[];
+-}
+-
+-interface TraefikService {
+-  loadBalancer?: {
+-    servers: Array<{ url: string }>;
+-  };
+-}
+-
+-interface TraefikConfig {
+-  http?: {
+-    routers?: Record<string, TraefikRouter>;
+-    services?: Record<string, TraefikService>;
+-  };
+-}
+-
+-// Docker API Response Interfaces
+-interface DockerContainer {
+-  Id: string;
+-  Names: string[];
+-  Image: string;
+-  ImageID: string;
+-  Command: string;
+-  Created: number;
+-  Ports: Array<{ IP?: string; PrivatePort: number; PublicPort?: number; Type: string }>;
+-  Labels: Record<string, string>;
+-  State: string;
+-  Status: string;
+-  HostConfig: {
+-    NetworkMode: string;
+-  };
+-  NetworkSettings: {
+-    Networks: Record<string, unknown>;
+-  };
+-  Mounts: Array<unknown>;
+-}
+-
+-// Parse Traefik config to build a map of container -> URL
+-async function parseTraefikConfig(): Promise<Map<string, { traefikUrl: string; serviceName: string }>> {
+-  const urlMap = new Map<string, { traefikUrl: string; serviceName: string }>();
+-  
+-  try {
+-    const configContent = await readFile(TRAEFIK_CONFIG_PATH, "utf-8");
+-    const config: TraefikConfig = parseYaml(configContent);
+-    
+-    if (!config.http?.routers || !config.http?.services) {
+-      return urlMap;
+-    }
+-    
+-    // Build router -> host mapping
+-    const routerHosts = new Map<string, string>();
+-    for (const [, router] of Object.entries(config.http.routers)) {
+-      // Extract first host from rule like: Host(`home.jr4.in`) || Host(`glance.jr4.in`)
+-      const hostMatch = router.rule.match(/Host\(`([^`]+)`\)/);
+-      if (hostMatch) {
+-        routerHosts.set(router.service, `http://${hostMatch[1]}`);
+-      }
+-    }
+-    
+-    // Build container name -> URL mapping from services
+-    for (const [serviceName, service] of Object.entries(config.http.services)) {
+-      if (service.loadBalancer?.servers?.[0]?.url) {
+-        const backendUrl = service.loadBalancer.servers[0].url;
+-        // Extract container name from URL like http://glance:8080 or http://host.docker.internal:9000
+-        const urlMatch = backendUrl.match(/https?:\/\/([^:\/]+)/);
+-        if (urlMatch) {
+-          const containerName = urlMatch[1];
+-          const traefikUrl = routerHosts.get(serviceName);
+-          if (traefikUrl && containerName !== "host.docker.internal" && !containerName.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+-            urlMap.set(containerName.toLowerCase(), { traefikUrl, serviceName });
+-          } else if (traefikUrl) {
+-            // For host.docker.internal entries, store by service name
+-            urlMap.set(serviceName.toLowerCase(), { traefikUrl, serviceName });
+-          }
+-        }
+-      }
+-    }
+-  } catch (error) {
+-    console.error("Failed to parse Traefik config:", error);
+-  }
+-  
+-  return urlMap;
+-}
+-
+-function extractCategoryAndSubgroup(name: string, labels: Record<string, string>): [string | null, string | null] {
+-  // Check for custom labels first
+-  const customCategory = labels["dashboard.category"];
+-  const customSubgroup = labels["dashboard.subgroup"];
+-  if (customCategory) {
+-    return [customCategory, customSubgroup || name];
+-  }
+-
+-  const lowerName = name.toLowerCase();
+-  
+-  // Check against our service mapping
+-  // Sort patterns by length descending to ensure specific matches (e.g. "gitlab-runner")
+-  // take precedence over generic ones (e.g. "runner")
+-  const sortedPatterns = Object.entries(SERVICE_MAPPING).sort((a, b) => b[0].length - a[0].length);
+-
+-  for (const [pattern, [category, subgroup]] of sortedPatterns) {
+-    if (lowerName.includes(pattern)) {
+-      return [category, subgroup];
+-    }
+-  }
+-
+-  // Fallback: Check for docker-compose project label
+-  const composeProject = labels["com.docker.compose.project"];
+-  if (composeProject) {
+-    const projectLower = composeProject.toLowerCase();
+-    
+-    // Determine category
+-    let category = "dapps";
+-    if (projectLower.includes("gitea") || projectLower.includes("renovate")) {
+-      category = "devops";
+-    } else if (projectLower.includes("traefik") || projectLower.includes("cloudflare") || projectLower.includes("database")) {
+-      category = "infra";
+-    }
+-    
+-    return [category, composeProject];
+-  }
+-
+-  return [null, null];
+-}
+-
+-function extractUrlFromLabels(labels: Record<string, string>): string | null {
+-  for (const [key, value] of Object.entries(labels)) {
+-    // Look for Traefik router rules: traefik.http.routers.NAME.rule
+-    if (key.includes("traefik.http.routers") && key.includes(".rule")) {
+-      const hostMatch = value.match(/Host\(`([^`]+)`\)/);
+-      if (hostMatch) {
+-        return `http://${hostMatch[1]}`;
+-      }
+-    }
+-  }
+-  return null;
+-}
+-
+-function findTraefikUrl(
+-  containerName: string, 
+-  traefikMap: Map<string, { traefikUrl: string; serviceName: string }>
+-): string | null {
+-  const lowerName = containerName.toLowerCase();
+-  
+-  // 1. Direct match (exact name)
+-  if (traefikMap.has(lowerName)) {
+-    return traefikMap.get(lowerName)!.traefikUrl;
+-  }
+-  
+-  // 2. Fuzzy match
+-  for (const [key, value] of traefikMap) {
+-    const serviceName = value.serviceName.toLowerCase();
+-    
+-    // Exact containment
+-    if (lowerName.includes(key) || key.includes(lowerName)) {
+-      return value.traefikUrl;
+-    }
+-    
+-    // Service name containment
+-    if (lowerName.includes(serviceName)) {
+-      return value.traefikUrl;
+-    }
+-
+-    // Special case for Steam
+-    // container: steam-headless, service: steam-novnc
+-    if (lowerName.includes("steam") && serviceName.includes("steam")) {
+-        return value.traefikUrl;
+-    }
+-  }
+-  
+-  return null;
+-}
+-
+-function mapDockerContainer(
+-  c: DockerContainer, 
+-  traefikMap: Map<string, { traefikUrl: string; serviceName: string }>
+-): ContainerInfo {
+-  // Docker API returns Names as ["/name"], strip leading slash
+-  const name = c.Names[0]?.replace(/^\//, "") || c.Id.slice(0, 12);
+-  
+-  // Try to find URL via Traefik config first, then fall back to direct labels
+-  let url = findTraefikUrl(name, traefikMap);
+-  if (!url) {
+-    url = extractUrlFromLabels(c.Labels);
+-  }
+-
+-  const [category, subgroup] = extractCategoryAndSubgroup(name, c.Labels);
+-  
+-  // Parse Ports
+-  const ports = c.Ports.map(p => {
+-      // Format: 8080:80/tcp
+-      if (p.PublicPort) {
+-          return `${p.PublicPort}:${p.PrivatePort}/${p.Type}`;
+-      }
+-      return `${p.PrivatePort}/${p.Type}`;
+-  });
+-
+-  return {
+-    id: c.Id.slice(0, 12),
+-    name,
+-    image: c.Image.split(":")[0].split("/").pop() || c.Image,
+-    state: c.State as ContainerInfo["state"],
+-    status: c.Status,
+-    url,
+-    ports,
+-    category,
+-    subgroup,
+-  };
+-}
+-
+-async function fetchContainersViaSocket(): Promise<DockerContainer[]> {
+-  const { request } = await import("http");
+-
+-  return new Promise((resolve, reject) => {
+-    const options = {
+-      socketPath: "/var/run/docker.sock",
+-      path: "/containers/json?all=1",
+-      method: "GET",
+-    };
+-
+-    const req = request(options, (res) => {
+-      let data = "";
+-      res.on("data", (chunk) => (data += chunk));
+-      res.on("end", () => {
+-        try {
+-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+-            resolve(JSON.parse(data));
+-          } else {
+-            reject(new Error(`Docker API Error: ${res.statusCode} - ${data}`));
+-          }
+-        } catch (e) {
+-          reject(e);
+-        }
+-      });
+-    });
+-
+-    req.on("error", (e) => reject(e));
+-    req.end();
+-  });
+-}
+-
+-function organizeContainers(containers: ContainerInfo[]): { categories: Category[]; uncategorized: ContainerInfo[] } {
+-  // Category order
+-  const categoryOrder = ["dapps", "devops", "infra"];
+-  
+-  // Build nested structure: category -> subgroup -> containers
+-  const categoryMap = new Map<string, Map<string, ContainerInfo[]>>();
+-  const uncategorized: ContainerInfo[] = [];
+-
+-  for (const container of containers) {
+-    if (container.category && container.subgroup) {
+-      if (!categoryMap.has(container.category)) {
+-        categoryMap.set(container.category, new Map());
+-      }
+-      const subgroupMap = categoryMap.get(container.category)!;
+-      if (!subgroupMap.has(container.subgroup)) {
+-        subgroupMap.set(container.subgroup, []);
+-      }
+-      subgroupMap.get(container.subgroup)!.push(container);
+-    } else {
+-      uncategorized.push(container);
+-    }
+-  }
+-
+-  // Build category objects in order
+-  const categories: Category[] = [];
+-  
+-  for (const categoryName of categoryOrder) {
+-    const subgroupMap = categoryMap.get(categoryName);
+-    if (!subgroupMap || subgroupMap.size === 0) continue;
+-    
+-    const subgroups: Subgroup[] = [];
+-    let categoryRunning = 0;
+-    let categoryTotal = 0;
+-    
+-    // Sort subgroups alphabetically
+-    const sortedSubgroups = Array.from(subgroupMap.entries()).sort((a, b) => 
+-      a[0].localeCompare(b[0])
+-    );
+-    
+-    for (const [subgroupName, subgroupContainers] of sortedSubgroups) {
+-      const running = subgroupContainers.filter(c => c.state === "running").length;
+-      const total = subgroupContainers.length;
+-      
+-      // Find the main URL for this subgroup (first container with a URL)
+-      const mainUrl = subgroupContainers.find(c => c.url)?.url || null;
+-      
+-      subgroups.push({
+-        name: subgroupName,
+-        containers: subgroupContainers.sort((a, b) => a.name.localeCompare(b.name)),
+-        runningCount: running,
+-        totalCount: total,
+-        url: mainUrl,
+-      });
+-      
+-      categoryRunning += running;
+-      categoryTotal += total;
+-    }
+-    
+-    categories.push({
+-      name: categoryName,
+-      subgroups,
+-      runningCount: categoryRunning,
+-      totalCount: categoryTotal,
+-    });
+-    
+-    categoryMap.delete(categoryName);
+-  }
+-  
+-  // Add any remaining categories
+-  for (const [categoryName, subgroupMap] of categoryMap) {
+-    const subgroups: Subgroup[] = [];
+-    let categoryRunning = 0;
+-    let categoryTotal = 0;
+-    
+-    for (const [subgroupName, subgroupContainers] of subgroupMap) {
+-      const running = subgroupContainers.filter(c => c.state === "running").length;
+-      const total = subgroupContainers.length;
+-      const mainUrl = subgroupContainers.find(c => c.url)?.url || null;
+-      
+-      subgroups.push({
+-        name: subgroupName,
+-        containers: subgroupContainers.sort((a, b) => a.name.localeCompare(b.name)),
+-        runningCount: running,
+-        totalCount: total,
+-        url: mainUrl,
+-      });
+-      
+-      categoryRunning += running;
+-      categoryTotal += total;
+-    }
+-    
+-    categories.push({
+-      name: categoryName,
+-      subgroups: subgroups.sort((a, b) => a.name.localeCompare(b.name)),
+-      runningCount: categoryRunning,
+-      totalCount: categoryTotal,
+-    });
+-  }
+-  
+-  // Sort uncategorized
+-  uncategorized.sort((a, b) => {
+-    if (a.state === "running" && b.state !== "running") return -1;
+-    if (a.state !== "running" && b.state === "running") return 1;
+-    return a.name.localeCompare(b.name);
+-  });
+-
+-  return { categories, uncategorized };
+-}
+-
+-export async function GET() {
+-  try {
+-    // Parse Traefik config to get URL mappings
+-    const traefikMap = await parseTraefikConfig();
+-    
+-    // Fetch running containers via Socket
+-    const rawContainers = await fetchContainersViaSocket();
+-    const containers = rawContainers.map((c) => mapDockerContainer(c, traefikMap));
+-
+-    const { categories, uncategorized } = organizeContainers(containers);
+-    const running = containers.filter((c) => c.state === "running").length;
+-
+-    return NextResponse.json({
+-      categories,
+-      uncategorized,
+-      total: containers.length,
+-      running,
+-      timestamp: Date.now(),
+-    });
+-  } catch (error) {
+-    console.error("Failed to fetch containers:", error);
+-    return NextResponse.json(
+-      {
+-        error: "Failed to connect to Docker",
+-        message: error instanceof Error ? error.message : "Unknown error",
+-      },
+-      { status: 500 }
+-    );
+-  }
+-}
+\ No newline at end of file
+diff --git a/src/app/api/stats/route.ts b/src/app/api/stats/route.ts
+deleted file mode 100644
+index c7965a5..0000000
+--- a/src/app/api/stats/route.ts
++++ /dev/null
+@@ -1,171 +0,0 @@
+-import { NextResponse } from "next/server";
+-import { request } from "http";
+-
+-export const dynamic = 'force-dynamic';
+-
+-interface DockerStats {
+-  id: string;
+-  name: string;
+-  cpu_stats: {
+-    cpu_usage: {
+-      total_usage: number;
+-    };
+-    system_cpu_usage: number;
+-    online_cpus: number;
+-  };
+-  precpu_stats: {
+-    cpu_usage: {
+-      total_usage: number;
+-    };
+-    system_cpu_usage: number;
+-  };
+-  memory_stats: {
+-    usage: number;
+-    limit: number;
+-  };
+-  networks: Record<string, { rx_bytes: number; tx_bytes: number }>;
+-  pids_stats: {
+-    current: number;
+-  };
+-  blkio_stats: {
+-    io_service_bytes_recursive: Array<{ major: number; minor: number; op: string; value: number }>;
+-  };
+-}
+-
+-// Helper to fetch JSON from Docker Socket
+-function fetchSocket(path: string): Promise<any> {
+-  return new Promise((resolve, reject) => {
+-    const req = request({
+-      socketPath: "/var/run/docker.sock",
+-      path,
+-      method: "GET",
+-    }, (res) => {
+-      let data = "";
+-      res.on("data", c => data += c);
+-      res.on("end", () => {
+-        try {
+-          if (res.statusCode === 200) resolve(JSON.parse(data));
+-          else reject(new Error(`Status ${res.statusCode}`));
+-        } catch(e) { reject(e); }
+-      });
+-    });
+-    req.on("error", reject);
+-    req.end();
+-  });
+-}
+-
+-function calculateCPU(stats: DockerStats): string {
+-    const cpuDelta = stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage;
+-    const systemDelta = stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage;
+-    const cpuCount = stats.cpu_stats.online_cpus || 1;
+-
+-    if (systemDelta > 0 && cpuDelta > 0) {
+-        const ratio = (cpuDelta / systemDelta) * cpuCount * 100.0;
+-        return ratio.toFixed(2) + "%";
+-    }
+-    return "0.00%";
+-}
+-
+-function formatBytes(bytes: number): string {
+-    if (bytes === 0) return "0B";
+-    const sizes = ["B", "kB", "MB", "GB", "TB"];
+-    const i = Math.floor(Math.log(bytes) / Math.log(1000));
+-    return parseFloat((bytes / Math.pow(1000, i)).toFixed(2)) + "" + sizes[i];
+-}
+-
+-function formatMiB(bytes: number): string {
+-    const mib = bytes / 1024 / 1024;
+-    const gib = mib / 1024;
+-    if (gib >= 1) return gib.toFixed(3) + "GiB";
+-    return mib.toFixed(2) + "MiB";
+-}
+-
+-export async function GET(req: Request) {
+-  const encoder = new TextEncoder();
+-  let isClosed = false;
+-
+-  const stream = new ReadableStream({
+-    async start(controller) {
+-      // 1. Get initial list of containers
+-      let containers: any[] = [];
+-      try {
+-        containers = await fetchSocket("/containers/json");
+-      } catch (e) {
+-        console.error("Failed to fetch containers list:", e);
+-        controller.close();
+-        return;
+-      }
+-
+-      // 2. Loop and fetch stats for each container
+-      const fetchStats = async () => {
+-        if (isClosed) return;
+-
+-        const promises = containers.map(async (c) => {
+-            try {
+-                // Fetch single-shot stats (stream=0)
+-                const stats: DockerStats = await fetchSocket(`/containers/${c.Id}/stats?stream=0`);
+-                
+-                // Transform to format expected by frontend
+-                // "BlockIO":"124MB / 748MB","CPUPerc":"0.50%","MemPerc":"0.38%","MemUsage":"29.78MiB / 7.686GiB","Name":"siyuan","NetIO":"21.7MB / 25.5MB","PIDs":"11"
+-                
+-                // Calculate NetIO
+-                let rx = 0, tx = 0;
+-                if (stats.networks) {
+-                    Object.values(stats.networks).forEach(n => {
+-                        rx += n.rx_bytes;
+-                        tx += n.tx_bytes;
+-                    });
+-                }
+-
+-                // Calculate BlockIO
+-                let read = 0, write = 0;
+-                if (stats.blkio_stats?.io_service_bytes_recursive) {
+-                    stats.blkio_stats.io_service_bytes_recursive.forEach(io => {
+-                        if (io.op.toLowerCase() === 'read') read += io.value;
+-                        if (io.op.toLowerCase() === 'write') write += io.value;
+-                    });
+-                }
+-
+-                const payload = {
+-                    ID: c.Id,
+-                    Name: c.Names[0]?.replace(/^\//, "") || c.Id.slice(0, 12),
+-                    CPUPerc: calculateCPU(stats),
+-                    MemUsage: `${formatMiB(stats.memory_stats.usage)} / ${formatMiB(stats.memory_stats.limit)}`,
+-                    MemPerc: ((stats.memory_stats.usage / stats.memory_stats.limit) * 100).toFixed(2) + "%",
+-                    NetIO: `${formatBytes(rx)} / ${formatBytes(tx)}`,
+-                    BlockIO: `${formatBytes(read)} / ${formatBytes(write)}`,
+-                    PIDs: stats.pids_stats.current.toString()
+-                };
+-
+-                controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+-            } catch (e) {
+-                // Container might have stopped or error fetching stats
+-                // console.error(`Error stats for ${c.Names[0]}:`, e);
+-            }
+-        });
+-
+-        await Promise.all(promises);
+-      };
+-
+-      // Initial fetch
+-      await fetchStats();
+-
+-      // Poll every 2 seconds
+-      const interval = setInterval(fetchStats, 2000);
+-
+-      req.signal.addEventListener("abort", () => {
+-        isClosed = true;
+-        clearInterval(interval);
+-        controller.close();
+-      });
+-    }
+-  });
+-
+-  return new NextResponse(stream, {
+-    headers: {
+-      "Content-Type": "text/event-stream",
+-      "Cache-Control": "no-cache",
+-      "Connection": "keep-alive",
+-    },
+-  });
+-}
+diff --git a/src/app/globals.css b/src/app/globals.css
+index e6dcc2e..a2dc41e 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -1,93 +1,26 @@
+ @import "tailwindcss";
+ 
+-@font-face {
+-  font-family: 'Instrument Sans';
+-  src: url('https://fonts.gstatic.com/s/instrumentsans/v1/pximypc9vsFDm051Ber4v1s1HBQ1BH0llQ.woff2') format('woff2');
+-  font-weight: 400;
+-  font-style: normal;
+-  font-display: swap;
+-}
+-
+-@font-face {
+-  font-family: 'Instrument Sans';
+-  src: url('https://fonts.gstatic.com/s/instrumentsans/v1/pximypc9vsFDm051Ber4v1s1HBQ1BH0llQ.woff2') format('woff2');
+-  font-weight: 500;
+-  font-style: normal;
+-  font-display: swap;
++:root {
++  --background: #ffffff;
++  --foreground: #171717;
+ }
+ 
+-:root {
+-  --bg: #fafafa;
+-  --fg: #0a0a0a;
+-  --muted: #737373;
+-  --border: #e5e5e5;
+-  --accent: #0a0a0a;
+-  --running: #22c55e;
+-  --stopped: #ef4444;
+-  --paused: #f59e0b;
++@theme inline {
++  --color-background: var(--background);
++  --color-foreground: var(--foreground);
++  --font-sans: var(--font-geist-sans);
++  --font-mono: var(--font-geist-mono);
+ }
+ 
+ @media (prefers-color-scheme: dark) {
+   :root {
+-    --bg: #0a0a0a;
+-    --fg: #fafafa;
+-    --muted: #a3a3a3;
+-    --border: #262626;
+-    --accent: #fafafa;
++    --background: #0a0a0a;
++    --foreground: #ededed;
+   }
+ }
+ 
+-@theme inline {
+-  --color-background: var(--bg);
+-  --color-foreground: var(--fg);
+-  --font-sans: 'Instrument Sans', system-ui, sans-serif;
+-}
+-
+-* {
+-  box-sizing: border-box;
+-}
+-
+-html {
+-  background: var(--bg);
+-}
+-
+ body {
+-  background: var(--bg);
+-  color: var(--fg);
+-  font-family: 'Instrument Sans', system-ui, sans-serif;
+-  min-height: 100vh;
+-  -webkit-font-smoothing: antialiased;
+-  -moz-osx-font-smoothing: grayscale;
+-}
+-
+-/* Subtle fade in */
+-@keyframes fadeIn {
+-  from { opacity: 0; transform: translateY(4px); }
+-  to { opacity: 1; transform: translateY(0); }
+-}
+-
+-.fade-in {
+-  animation: fadeIn 0.4s ease forwards;
+-  opacity: 0;
+-}
+-
+-/* Link hover */
+-a {
+-  color: var(--fg);
+-  text-decoration: none;
+-  transition: opacity 0.15s ease;
+-}
+-
+-a:hover {
+-  opacity: 0.6;
+-}
+-
+-/* Status dot pulse for running */
+-@keyframes pulse {
+-  0%, 100% { opacity: 1; }
+-  50% { opacity: 0.5; }
+-}
+-
+-.pulse {
+-  animation: pulse 2s ease-in-out infinite;
++  background: var(--background);
++  color: var(--foreground);
++  font-family: Arial, Helvetica, sans-serif;
+ }
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index a307588..f7fa87e 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
+ });
+ 
+ export const metadata: Metadata = {
+-  title: "Docker Control Panel",
+-  description: "Home server container dashboard with Traefik and Cloudflare tunnel links",
++  title: "Create Next App",
++  description: "Generated by create next app",
+ };
+ 
+ export default function RootLayout({
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index a8302be..295f8fd 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1,299 +1,65 @@
+-"use client";
+-
+-import { useEffect, useState, useCallback } from "react";
+-
+-interface ContainerInfo {
+-  id: string;
+-  name: string;
+-  image: string;
+-  state: "running" | "paused" | "exited" | "created" | "dead";
+-  status: string;
+-  url: string | null;
+-  ports: string[];
+-  category: string | null;
+-  subgroup: string | null;
+-}
+-
+-interface Subgroup {
+-  name: string;
+-  containers: ContainerInfo[];
+-  runningCount: number;
+-  totalCount: number;
+-  url: string | null;
+-}
+-
+-interface Category {
+-  name: string;
+-  subgroups: Subgroup[];
+-  runningCount: number;
+-  totalCount: number;
+-}
+-
+-interface ApiResponse {
+-  categories?: Category[];
+-  uncategorized?: ContainerInfo[];
+-  total?: number;
+-  running?: number;
+-  error?: string;
+-  message?: string;
+-}
+-
+-function StatusDot({ state }: { state: ContainerInfo["state"] }) {
+-  const colors = {
+-    running: "bg-green-500",
+-    paused: "bg-amber-500",
+-    exited: "bg-red-500",
+-    created: "bg-blue-500",
+-    dead: "bg-red-500",
+-  };
+-
+-  return (
+-    <div
+-      className={`w-1.5 h-1.5 rounded-full shrink-0 translate-y-[0.5px] ${colors[state]}`}
+-    />
+-  );
+-}
+-
+-function getUrlLabel(url: string): string {
+-  try {
+-    const hostname = new URL(url).hostname;
+-    return `[${hostname}]`;
+-  } catch {
+-    return "[link]";
+-  }
+-}
+-
+-function ContainerRow({ container }: { container: ContainerInfo }) {
+-  const displayName = container.subgroup
+-    ? container.name.replace(`${container.subgroup}_`, "").replace(`${container.subgroup}-`, "")
+-    : container.name;
++import Image from "next/image";
+ 
++export default function Home() {
+   return (
+-    <div className="flex items-center justify-between gap-2 py-1 text-xs">
+-      <div className="flex items-center gap-1.5 min-w-0">
+-        <StatusDot state={container.state} />
+-        <span className="truncate text-[var(--muted)]">{displayName}</span>
+-      </div>
+-      {container.url && (
+-        <a
+-          href={container.url}
+-          target="_blank"
+-          rel="noopener noreferrer"
+-          className="text-[var(--muted)] hover:text-[var(--fg)] transition-colors shrink-0"
+-        >
+-          {getUrlLabel(container.url)}
+-        </a>
+-      )}
+-    </div>
+-  );
+-}
+-
+-function SubgroupItem({ subgroup }: { subgroup: Subgroup }) {
+-  const [open, setOpen] = useState(false);
+-  const hasMultiple = subgroup.containers.length > 1;
+-  const allRunning = subgroup.runningCount === subgroup.totalCount;
+-  const mainState = allRunning ? "running" : subgroup.runningCount > 0 ? "paused" : "exited";
+-
+-  // Single container - show directly
+-  if (!hasMultiple) {
+-    const container = subgroup.containers[0];
+-    return (
+-      <div className="flex items-center justify-between gap-2 py-1.5 text-sm">
+-        <div className="flex items-center gap-2 min-w-0">
+-          <StatusDot state={container.state} />
+-          <span className="truncate">{subgroup.name}</span>
++    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
++      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
++        <Image
++          className="dark:invert"
++          src="/next.svg"
++          alt="Next.js logo"
++          width={100}
++          height={20}
++          priority
++        />
++        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
++          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
++            To get started, edit the page.tsx file.
++          </h1>
++          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
++            Looking for a starting point or more instructions? Head over to{" "}
++            <a
++              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
++              className="font-medium text-zinc-950 dark:text-zinc-50"
++            >
++              Templates
++            </a>{" "}
++            or the{" "}
++            <a
++              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
++              className="font-medium text-zinc-950 dark:text-zinc-50"
++            >
++              Learning
++            </a>{" "}
++            center.
++          </p>
+         </div>
+-        {subgroup.url && (
++        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
+           <a
+-            href={subgroup.url}
++            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
++            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
+             target="_blank"
+             rel="noopener noreferrer"
+-            className="text-xs text-[var(--muted)] hover:text-[var(--fg)] transition-colors shrink-0"
+           >
+-            {getUrlLabel(subgroup.url)}
++            <Image
++              className="dark:invert"
++              src="/vercel.svg"
++              alt="Vercel logomark"
++              width={16}
++              height={16}
++            />
++            Deploy Now
+           </a>
+-        )}
+-      </div>
+-    );
+-  }
+-
+-  // Multiple containers - expandable
+-  return (
+-    <div>
+-      <button
+-        onClick={() => setOpen(!open)}
+-        className="w-full flex items-center justify-between gap-2 py-1.5 text-sm text-left hover:opacity-70 transition-opacity"
+-      >
+-        <div className="flex items-center gap-2 min-w-0">
+-          <StatusDot state={mainState as ContainerInfo["state"]} />
+-          <span className="truncate">{subgroup.name}</span>
+-          <span className="text-xs text-[var(--muted)]">
+-            {subgroup.runningCount}/{subgroup.totalCount}
+-          </span>
+-          <span className={`text-xs transition-transform ${open ? "rotate-90" : ""}`}>
+-            ›
+-          </span>
+-        </div>
+-        <div className="flex items-center shrink-0">
+-          {subgroup.url && (
+-            <a
+-              href={subgroup.url}
+-              target="_blank"
+-              rel="noopener noreferrer"
+-              className="text-xs text-[var(--muted)] hover:text-[var(--fg)] transition-colors"
+-              onClick={(e) => e.stopPropagation()}
+-            >
+-              {getUrlLabel(subgroup.url)}
+-            </a>
+-          )}
+-        </div>
+-      </button>
+-
+-      {open && (
+-        <div className="pl-4 pb-1 border-l border-[var(--border)] ml-0.5">
+-          {subgroup.containers.map((container) => (
+-            <ContainerRow key={container.id} container={container} />
+-          ))}
+-        </div>
+-      )}
+-    </div>
+-  );
+-}
+-
+-function CategoryColumn({ category }: { category: Category }) {
+-  return (
+-    <div className="flex-1 min-w-0">
+-      <div className="mb-3 pb-2 border-b border-[var(--border)]">
+-        <h2 className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+-          {category.name}
+-        </h2>
+-        <span className="text-xs text-[var(--muted)]">
+-          {category.runningCount}/{category.totalCount}
+-        </span>
+-      </div>
+-      <div className="space-y-0.5">
+-        {category.subgroups.map((subgroup) => (
+-          <SubgroupItem key={subgroup.name} subgroup={subgroup} />
+-        ))}
+-      </div>
+-    </div>
+-  );
+-}
+-
+-function UncategorizedSection({ containers }: { containers: ContainerInfo[] }) {
+-  if (containers.length === 0) return null;
+-
+-  return (
+-    <div className="mt-8 pt-6 border-t border-[var(--border)]">
+-      <div className="text-xs text-[var(--muted)] mb-3 uppercase tracking-wide">
+-        Other
+-      </div>
+-      <div className="space-y-1">
+-        {containers.map((container) => (
+-          <div key={container.id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+-            <div className="flex items-center gap-2 min-w-0">
+-              <StatusDot state={container.state} />
+-              <span className="truncate">{container.name}</span>
+-            </div>
+-            {container.url ? (
+-              <a
+-                href={container.url}
+-                target="_blank"
+-                rel="noopener noreferrer"
+-                className="text-xs text-[var(--muted)] hover:text-[var(--fg)] transition-colors shrink-0"
+-              >
+-                {getUrlLabel(container.url)}
+-              </a>
+-            ) : (
+-              <span className="text-xs text-[var(--muted)]">—</span>
+-            )}
+-          </div>
+-        ))}
+-      </div>
+-    </div>
+-  );
+-}
+-
+-import Link from "next/link";
+-
+-export default function Home() {
+-  const [categories, setCategories] = useState<Category[]>([]);
+-  const [uncategorized, setUncategorized] = useState<ContainerInfo[]>([]);
+-  const [total, setTotal] = useState(0);
+-  const [running, setRunning] = useState(0);
+-  const [loading, setLoading] = useState(true);
+-  const [error, setError] = useState<string | null>(null);
+-
+-  const fetchContainers = useCallback(async () => {
+-    try {
+-      const res = await fetch("/api/containers");
+-      const data: ApiResponse = await res.json();
+-
+-      if (data.error) {
+-        throw new Error(data.message || data.error);
+-      }
+-
+-      setCategories(data.categories || []);
+-      setUncategorized(data.uncategorized || []);
+-      setTotal(data.total || 0);
+-      setRunning(data.running || 0);
+-      setError(null);
+-    } catch (err) {
+-      setError(err instanceof Error ? err.message : "Failed to load");
+-    } finally {
+-      setLoading(false);
+-    }
+-  }, []);
+-
+-  useEffect(() => {
+-    fetchContainers();
+-    const interval = setInterval(fetchContainers, 10000);
+-    return () => clearInterval(interval);
+-  }, [fetchContainers]);
+-
+-  return (
+-    <main className="min-h-screen px-6 py-12 max-w-6xl mx-auto">
+-      <header className="mb-8 fade-in">
+-        <div className="flex items-baseline gap-2 mb-0.5">
+-          <h1 className="text-xl font-medium tracking-tight text-[var(--foreground)]">Overview</h1>
+-          <span className="text-xl text-[var(--muted)] font-light">|</span>
+-          <Link href="/top" className="text-xl font-medium tracking-tight text-[var(--muted)] hover:text-[var(--foreground)] transition-colors">
+-            Top
+-          </Link>
+-        </div>
+-        <p className="text-[var(--muted)] text-sm">
+-          {loading ? "Loading..." : `${running} of ${total} running`}
+-        </p>
+-      </header>
+-
+-      {error ? (
+-        <div className="fade-in text-[var(--muted)] py-6">
+-          <p className="mb-3 text-sm">{error}</p>
+-          <button
+-            onClick={fetchContainers}
+-            className="text-xs underline underline-offset-4 hover:opacity-60 transition-opacity"
++          <a
++            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
++            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
++            target="_blank"
++            rel="noopener noreferrer"
+           >
+-            Retry
+-          </button>
+-        </div>
+-      ) : loading ? (
+-        <div className="py-6 fade-in">
+-          <div className="w-3 h-3 border border-[var(--border)] border-t-[var(--fg)] rounded-full animate-spin" />
+-        </div>
+-      ) : total === 0 ? (
+-        <p className="text-[var(--muted)] text-sm py-6 fade-in">No containers.</p>
+-      ) : (
+-        <div className="fade-in">
+-          {/* 3-column layout for categories */}
+-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+-            {categories.map((category) => (
+-              <CategoryColumn key={category.name} category={category} />
+-            ))}
+-          </div>
+-          
+-          <UncategorizedSection containers={uncategorized} />
++            Documentation
++          </a>
+         </div>
+-      )}
+-    </main>
++      </main>
++    </div>
+   );
+ }
+diff --git a/src/app/top/page.tsx b/src/app/top/page.tsx
+deleted file mode 100644
+index 2bb2bf7..0000000
+--- a/src/app/top/page.tsx
++++ /dev/null
+@@ -1,166 +0,0 @@
+-"use client";
+-
+-import { useEffect, useState } from "react";
+-import Link from "next/link";
+-
+-interface DockerStats {
+-  ID: string;
+-  Name: string;
+-  CPUPerc: string;
+-  MemUsage: string;
+-  NetIO: string;
+-  BlockIO: string;
+-  MemPerc: string;
+-  PIDs: string;
+-}
+-
+-type SortKey = keyof DockerStats;
+-type SortDirection = 'asc' | 'desc';
+-
+-const parseValue = (value: string) => {
+-    if (!value) return 0;
+-    // Remove percentage
+-    if (value.includes('%')) {
+-        return parseFloat(value.replace('%', ''));
+-    }
+-    
+-    // Handle "Value / Limit" format (take first part)
+-    const part = value.split('/')[0].trim();
+-    
+-    // Parse units
+-    const match = part.match(/^([\d.]+)([A-Za-z]+)$/);
+-    if (match) {
+-        const num = parseFloat(match[1]);
+-        const unit = match[2].toLowerCase();
+-        
+-        const multipliers: Record<string, number> = {
+-            b: 1,
+-            kb: 1000,
+-            kib: 1024,
+-            mb: 1000 * 1000,
+-            mib: 1024 * 1024,
+-            gb: 1000 * 1000 * 1000,
+-            gib: 1024 * 1024 * 1024,
+-            tb: 1000 * 1000 * 1000 * 1000,
+-            tib: 1024 * 1024 * 1024 * 1024
+-        };
+-        
+-        return num * (multipliers[unit] || 1);
+-    }
+-    
+-    const num = parseFloat(part);
+-    return isNaN(num) ? part : num;
+-};
+-
+-export default function TopPage() {
+-  const [stats, setStats] = useState<Record<string, DockerStats>>({});
+-  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>({
+-    key: 'MemPerc',
+-    direction: 'desc',
+-  });
+-
+-  useEffect(() => {
+-    const eventSource = new EventSource("/api/stats");
+-
+-    eventSource.onmessage = (event) => {
+-      if (!event.data) return;
+-      try {
+-        const data: DockerStats = JSON.parse(event.data);
+-        setStats((prev) => ({
+-          ...prev,
+-          [data.ID]: data,
+-        }));
+-      } catch (e) {
+-        // Only log if it's not empty/whitespace
+-        if (event.data.trim()) {
+-             console.error("Failed to parse stats:", event.data, e);
+-        }
+-      }
+-    };
+-
+-    return () => {
+-      eventSource.close();
+-    };
+-  }, []);
+-
+-  const handleSort = (key: SortKey) => {
+-    setSortConfig((current) => ({
+-      key,
+-      direction: current.key === key && current.direction === 'desc' ? 'asc' : 'desc',
+-    }));
+-  };
+-
+-  const sortedStats = Object.values(stats).sort((a, b) => {
+-     const valA = parseValue(a[sortConfig.key]);
+-     const valB = parseValue(b[sortConfig.key]);
+-     
+-     if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+-     if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+-     return 0;
+-  });
+-
+-  const SortHeader = ({ label, id }: { label: string; id: SortKey }) => (
+-    <th 
+-        className="p-3 font-medium uppercase tracking-wide text-xs cursor-pointer hover:text-[var(--foreground)] transition-colors select-none group"
+-        onClick={() => handleSort(id)}
+-    >
+-        <div className="flex items-center gap-1">
+-            {label}
+-            <span className={`transition-opacity ${sortConfig.key === id ? 'opacity-100' : 'opacity-20 group-hover:opacity-50'}`}>
+-                {sortConfig.key === id && sortConfig.direction === 'asc' ? '▲' : '▼'}
+-            </span>
+-        </div>
+-    </th>
+-  );
+-
+-  return (
+-    <main className="min-h-screen px-6 py-12 max-w-6xl mx-auto">
+-        <header className="mb-8 fade-in">
+-            <div className="flex items-baseline gap-2 mb-0.5">
+-                <Link href="/" className="text-xl font-medium tracking-tight text-[var(--muted)] hover:text-[var(--foreground)] transition-colors">
+-                    Overview
+-                </Link>
+-                <span className="text-xl text-[var(--muted)] font-light">|</span>
+-                <h1 className="text-xl font-medium tracking-tight text-[var(--foreground)]">Top</h1>
+-            </div>
+-             <p className="text-[var(--muted)] text-sm">Real-time resource usage via docker stats</p>
+-        </header>
+-
+-        <div className="overflow-x-auto fade-in">
+-            <table className="w-full text-left text-sm whitespace-nowrap">
+-                <thead>
+-                    <tr className="border-b border-[var(--border)] text-[var(--muted)]">
+-                        <SortHeader label="Name" id="Name" />
+-                        <SortHeader label="CPU %" id="CPUPerc" />
+-                        <SortHeader label="Mem Usage" id="MemUsage" />
+-                        <SortHeader label="Mem %" id="MemPerc" />
+-                        <SortHeader label="Net I/O" id="NetIO" />
+-                        <SortHeader label="Block I/O" id="BlockIO" />
+-                        <SortHeader label="PIDs" id="PIDs" />
+-                    </tr>
+-                </thead>
+-                <tbody className="divide-y divide-[var(--border)]">
+-                    {sortedStats.map(s => (
+-                        <tr key={s.ID} className="hover:bg-[var(--accent)]/5 transition-colors">
+-                            <td className="p-3 font-mono">{s.Name}</td>
+-                            <td className="p-3 font-mono text-green-500">{s.CPUPerc}</td>
+-                            <td className="p-3 font-mono">{s.MemUsage}</td>
+-                            <td className="p-3 font-mono">{s.MemPerc}</td>
+-                            <td className="p-3 font-mono text-[var(--muted)]">{s.NetIO}</td>
+-                            <td className="p-3 font-mono text-[var(--muted)]">{s.BlockIO}</td>
+-                            <td className="p-3 font-mono text-[var(--muted)]">{s.PIDs}</td>
+-                        </tr>
+-                    ))}
+-                    {sortedStats.length === 0 && (
+-                        <tr>
+-                            <td colSpan={7} className="p-6 text-center text-[var(--muted)]">
+-                                Connecting to Docker...
+-                            </td>
+-                        </tr>
+-                    )}
+-                </tbody>
+-            </table>
+-        </div>
+-    </main>
+-  );
+-}

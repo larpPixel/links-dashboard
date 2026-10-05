@@ -1,0 +1,38 @@
+{
+  "source": "jR4dh3y/links-dashboard",
+  "source_url": "https://git.jr4.in/jR4dh3y/links-dashboard",
+  "destination": "larpPixel/links-dashboard",
+  "visibility": "public",
+  "default_branch": "main",
+  "original_git_refs": {
+    "source": "jR4dh3y/links-dashboard",
+    "name": "links-dashboard",
+    "private": false,
+    "source_present": true,
+    "branches": {
+      "refs/heads/main": "cd0655110e123a5074b46135407032a9be07ddf3",
+      "refs/heads/master": "f7ac4b60a4a210af077122f7ade6f7cfa96d18c6"
+    },
+    "tags": {},
+    "other_refs": {
+      "refs/pull/1/head": "d1ceaf41b43d3359cb05702fc22a2853b17ecbf2"
+    },
+    "oversized_blobs": []
+  },
+  "github_archival_ref_mapping": {
+    "refs/pull/1/head": "refs/gitea-import/pull/1/head"
+  },
+  "discussion_mapping": {
+    "1": {
+      "number": 1,
+      "url": "https://github.com/larpPixel/links-dashboard/issues/1",
+      "type": "archived_pr_issue",
+      "original_state": "closed",
+      "archive_reason": "unrelated_histories"
+    }
+  },
+  "recovered_refs": {},
+  "limitations": [
+    "Gitea PR #1 preserved as an issue (unrelated_histories); original state/history retained in export."
+  ]
+}
